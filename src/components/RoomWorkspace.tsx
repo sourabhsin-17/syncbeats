@@ -31,6 +31,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useSyncRoom } from '../hooks/useSyncRoom';
 import { getBuiltinTrackUrl } from '../lib/audioEngine';
 import { YouTubeSyncPlayer } from './YouTubeSyncPlayer';
+import { AmbientSoundCanvas } from './AmbientSoundCanvas';
 import type { RoomDevice, Track } from '../../shared/types';
 
 interface RoomWorkspaceProps {
@@ -520,8 +521,8 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
   // Terminal / Blocking states: Kicked, Room Not Found / Full, Password Required
   if (kickedReason) {
     return (
-      <div className="min-h-screen bg-[#070709] text-[#FAFAFA] flex items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-xl border border-white/10 bg-[#111115] p-7 text-center">
+      <div className="min-h-screen bg-[#06050E] text-[#E6EDF7] flex items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-xl glass p-7 text-center">
           <UserX className="w-10 h-10 text-rose-400 mx-auto mb-3" />
           <h1 className="font-display text-xl font-semibold text-white">Removed from Room</h1>
           <p className="mt-2 text-sm text-zinc-400">{kickedReason}</p>
@@ -540,8 +541,8 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
 
   if (passwordRequired && !roomState) {
     return (
-      <div className="min-h-screen bg-[#070709] text-[#FAFAFA] flex items-center justify-center p-6">
-        <div className="w-full max-w-sm rounded-xl border border-white/10 bg-[#111115] p-7">
+      <div className="min-h-screen bg-[#06050E] text-[#E6EDF7] flex items-center justify-center p-6">
+        <div className="w-full max-w-sm rounded-xl glass p-7">
           <div className="flex items-center gap-2.5 mb-2">
             <Lock className="w-5 h-5 text-[#FF4D1C]" />
             <h1 className="font-display text-xl font-semibold text-white">Room Locked</h1>
@@ -591,8 +592,8 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
     (errorCode === 'ROOM_NOT_FOUND' || errorCode === 'INVALID_ROOM' || errorCode === 'ROOM_FULL')
   ) {
     return (
-      <div className="min-h-screen bg-[#070709] text-[#FAFAFA] flex items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-xl border border-white/10 bg-[#111115] p-7 text-center">
+      <div className="min-h-screen bg-[#06050E] text-[#E6EDF7] flex items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-xl glass p-7 text-center">
           <h1 className="font-display text-xl font-semibold text-white">Unable to Join Room</h1>
           <p className="mt-2 text-sm text-zinc-400">{error}</p>
           <button
@@ -614,7 +615,8 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
   const chat = roomState?.chat ?? [];
 
   return (
-    <div className="min-h-screen bg-[#070709] text-[#FAFAFA]">
+    <div className="relative min-h-screen bg-[#06050E] text-[#E6EDF7]">
+      <AmbientSoundCanvas active={Boolean(roomState?.isPlaying)} />
       <audio
         ref={audioRef}
         src={audioSrc || undefined}
@@ -633,33 +635,33 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
       />
 
       {/* Strict 3-Zone Top Bar Contract */}
-      <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#070709]/95 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#06050E]/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1320px] items-center justify-between gap-8 px-6 py-4">
           <button
             type="button"
             onClick={handleLeave}
-            className="font-display text-lg font-bold tracking-tight text-white hover:text-[#FF6438] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="font-display text-lg font-extrabold tracking-tight text-[#E6EDF7] hover:text-[#67E8F9] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             SyncBeats
           </button>
 
           <nav
             aria-label="Room Navigation"
-            className="hidden lg:flex items-center gap-7 text-sm font-medium text-zinc-400"
+            className="hidden lg:flex items-center gap-7 text-sm font-medium text-[#A7A3C7]"
           >
-            <a href="#room-player" className="hover:text-white transition-colors whitespace-nowrap shrink-0">
+            <a href="#room-player" className="hover:text-[#67E8F9] transition-colors whitespace-nowrap shrink-0">
               Player
             </a>
-            <a href="#room-queue" className="hover:text-white transition-colors whitespace-nowrap shrink-0">
+            <a href="#room-queue" className="hover:text-[#67E8F9] transition-colors whitespace-nowrap shrink-0">
               Playlist
             </a>
-            <a href="#room-chat" className="hover:text-white transition-colors whitespace-nowrap shrink-0">
+            <a href="#room-chat" className="hover:text-[#67E8F9] transition-colors whitespace-nowrap shrink-0">
               Chat
             </a>
             <button
               type="button"
               onClick={handleLeave}
-              className="inline-flex items-center gap-1.5 hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-1.5 hover:text-[#67E8F9] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Leave Room</span>
@@ -679,12 +681,12 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1320px] px-4 sm:px-6 py-6 lg:py-8">
+      <main className="relative z-10 mx-auto max-w-[1320px] px-4 sm:px-6 py-6 lg:py-8">
         {/* Room Sub-Bar & Host Permissions */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/[0.08]">
           <div>
-            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-zinc-400">
-              <span className="font-mono text-[#FF4D1C]">Code {roomId}</span>
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-[#A7A3C7]">
+              <span className="font-mono text-[#67E8F9] font-semibold">Code {roomId}</span>
               <span aria-hidden="true">·</span>
               <span>{roomState?.visibility === 'private' ? 'Private Room' : 'Public Room'}</span>
               {roomState?.hasPassword && (
@@ -824,7 +826,7 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
             {/* Player Card */}
             <section
               id="room-player"
-              className={`${mobileTab === 'player' ? 'block' : 'hidden'} lg:block rounded-xl border border-white/10 bg-[#111115] p-5 sm:p-7`}
+              className={`${mobileTab === 'player' ? 'block' : 'hidden'} lg:block rounded-xl glass p-5 sm:p-7`}
             >
               {currentTrack ? (
                 <>
@@ -1042,7 +1044,7 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
             {/* Shared Collaborative Playlist */}
             <section
               id="room-queue"
-              className={`${mobileTab === 'playlist' ? 'block' : 'hidden'} lg:block rounded-xl border border-white/10 bg-[#111115] overflow-hidden`}
+              className={`${mobileTab === 'playlist' ? 'block' : 'hidden'} lg:block rounded-xl glass overflow-hidden`}
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-5 border-b border-white/[0.08]">
                 <div>
@@ -1295,7 +1297,7 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
             {/* Live Room Chat */}
             <section
               id="room-chat"
-              className={`${mobileTab === 'chat' ? 'flex' : 'hidden'} lg:flex flex-col rounded-xl border border-white/10 bg-[#111115] overflow-hidden`}
+              className={`${mobileTab === 'chat' ? 'flex' : 'hidden'} lg:flex flex-col rounded-xl glass overflow-hidden`}
             >
               <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1366,7 +1368,7 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
 
             {/* Invite / Multi-Device QR Card */}
             <section
-              className={`${mobileTab === 'speakers' ? 'block' : 'hidden'} lg:block rounded-xl border border-white/10 bg-[#111115] p-5`}
+              className={`${mobileTab === 'speakers' ? 'block' : 'hidden'} lg:block rounded-xl glass p-5`}
             >
               <div className="flex items-center justify-between gap-2">
                 <div>
@@ -1410,7 +1412,7 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
             {/* Connected Speakers & Host Governance */}
             <section
               id="room-speakers"
-              className={`${mobileTab === 'speakers' ? 'block' : 'hidden'} lg:block rounded-xl border border-white/10 bg-[#111115] overflow-hidden`}
+              className={`${mobileTab === 'speakers' ? 'block' : 'hidden'} lg:block rounded-xl glass overflow-hidden`}
             >
               <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between">
                 <h2 className="font-display text-base font-semibold text-white">

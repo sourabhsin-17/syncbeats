@@ -11,6 +11,7 @@
     font-family: var(--font-sans);
     scroll-behavior: smooth;
     color-scheme: dark;
+    background-color: #06050e;
   }
 
   h1, h2, h3, h4, .font-display {
@@ -27,9 +28,79 @@
   }
 
   :focus-visible {
-    outline: 2px solid #ff4d1c;
+    outline: 2px solid #67e8f9;
     outline-offset: 2px;
   }
+}
+
+/* Cosmic Nocturnal Stage & Frosted Glass Surfaces */
+.hero-gradient-stage {
+  background:
+    radial-gradient(65% 55% at 72% 28%, rgba(139, 92, 246, 0.24) 0%, rgba(139, 92, 246, 0) 70%),
+    radial-gradient(45% 45% at 20% 24%, rgba(255, 77, 28, 0.16) 0%, rgba(255, 77, 28, 0) 72%),
+    radial-gradient(50% 45% at 50% 80%, rgba(103, 232, 249, 0.11) 0%, rgba(103, 232, 249, 0) 72%),
+    #06050e;
+}
+
+.glass {
+  background: linear-gradient(155deg, rgba(22, 20, 44, 0.82) 0%, rgba(11, 10, 22, 0.9) 100%);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(230, 237, 247, 0.11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 20px 50px -24px rgba(4, 3, 12, 0.85);
+}
+
+.glass-inset {
+  background: rgba(8, 7, 18, 0.72);
+  border: 1px solid rgba(230, 237, 247, 0.12);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+.glass-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.glow-cyan {
+  box-shadow:
+    inset 0 1px 0 rgba(103, 232, 249, 0.25),
+    0 0 32px -12px rgba(103, 232, 249, 0.45);
+}
+
+.glow-violet {
+  box-shadow:
+    inset 0 1px 0 rgba(139, 92, 246, 0.25),
+    0 0 32px -12px rgba(139, 92, 246, 0.45);
+}
+
+.glow-flame {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 100, 56, 0.25),
+    0 0 36px -10px rgba(255, 77, 28, 0.52);
+}
+
+.wordmark-extrusion {
+  color: #e6edf7;
+  text-shadow:
+    0 2px 0 #1c1842,
+    0 4px 0 #141132,
+    0 6px 0 #0c0a22,
+    0 18px 42px rgba(103, 232, 249, 0.18);
+}
+
+@keyframes wobble-subtle {
+  0%, 100% {
+    transform: rotate(-1.4deg) translateY(0);
+  }
+  50% {
+    transform: rotate(1.4deg) translateY(-2px);
+  }
+}
+
+.animate-wobble-subtle {
+  animation: wobble-subtle 4.5s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

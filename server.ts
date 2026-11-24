@@ -95,7 +95,7 @@ const BUILTIN_CATALOG: Record<
     sourceType: 'builtin',
     provider: 'builtin',
     builtinKey: 'lofi',
-    artworkUrl: '/src/assets/images/cover_boom_bap_1795418328317.jpg',
+    artworkUrl: '/src/assets/images/cover_lofi_tape_1795551465579.jpg',
   },
   drill: {
     title: 'Southside Stunt',
@@ -105,7 +105,7 @@ const BUILTIN_CATALOG: Record<
     sourceType: 'builtin',
     provider: 'builtin',
     builtinKey: 'drill',
-    artworkUrl: '/src/assets/images/cover_808_afterhours_1795418328427.jpg',
+    artworkUrl: '/src/assets/images/cover_southside_drill_1795551465534.jpg',
   },
   golden: {
     title: 'Golden Era Tape',
@@ -115,7 +115,7 @@ const BUILTIN_CATALOG: Record<
     sourceType: 'builtin',
     provider: 'builtin',
     builtinKey: 'golden',
-    artworkUrl: '/src/assets/images/cover_concrete_cypher_1795418328402.jpg',
+    artworkUrl: '/src/assets/images/cover_golden_soul_1795551466591.jpg',
   },
 };
 
