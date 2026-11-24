@@ -123,6 +123,7 @@ function createDefaultQueue(): Track[] {
   const now = Date.now();
   return (Object.keys(BUILTIN_CATALOG) as Array<keyof typeof BUILTIN_CATALOG>).map((key, idx) => ({
     ...BUILTIN_CATALOG[key],
+    slideUrls: BUILTIN_CATALOG[key].artworkUrl ? [BUILTIN_CATALOG[key].artworkUrl] : [],
     id: `builtin-${key}`,
     addedBy: 'Beat Crate',
     addedByDeviceId: 'system',
@@ -326,13 +327,104 @@ function reorderUpcomingByVotes(room: RoomState) {
   room.queue = [...head, ...upcoming];
 }
 
-function parseProviderTrackFromUrl(
+function sanitizeExternalArtworkUrl(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'http:') {
+      parsed.protocol = 'https:';
+    }
+    if (parsed.protocol !== 'https:') return undefined;
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+}
+
+async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 2500): Promise<T | null> {
+  try {
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'SyncBeats/1.0',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchAppleMusicMeta(
+  targetUrl: string,
+  timeoutMs = 2500,
+): Promise<{ title?: string; artist?: string; artworkUrl?: string }> {
+  try {
+    const resp = await fetch(targetUrl, {
+      method: 'GET',
+      headers: {
+        Accept: 'text/html',
+        'User-Agent': 'Mozilla/5.0 (compatible; SyncBeats/1.0)',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!resp.ok) return {};
+    const html = (await resp.text()).slice(0, 131_072);
+
+    const extractMeta = (prop: string): string | undefined => {
+      const re1 = new RegExp(
+        `<meta[^>]+(?:property|name)=["']${prop}["'][^>]+content=["']([^"']+)["']`,
+        'i',
+      );
+      const re2 = new RegExp(
+        `<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${prop}["']`,
+        'i',
+      );
+      const match = re1.exec(html) || re2.exec(html);
+      return match?.[1] ? decodeHtmlEntities(match[1].trim()) : undefined;
+    };
+
+    const rawTitle = extractMeta('og:title') || extractMeta('twitter:title');
+    const rawImage = extractMeta('og:image') || extractMeta('twitter:image');
+    const artworkUrl = sanitizeExternalArtworkUrl(rawImage);
+
+    let title = rawTitle;
+    let artist: string | undefined;
+    if (rawTitle && rawTitle.includes(' by ')) {
+      const parts = rawTitle.split(' by ');
+      title = parts[0]?.trim();
+      artist = parts.slice(1).join(' by ').replace(/\s+on Apple Music$/i, '').trim();
+    } else if (rawTitle) {
+      title = rawTitle.replace(/\s+[-–|]\s*Apple Music$/i, '').trim();
+    }
+
+    return { title, artist, artworkUrl };
+  } catch {
+    return {};
+  }
+}
+
+async function parseProviderTrackFromUrl(
   rawUrl: string,
   addedBy: string,
   addedByDeviceId: string,
   customTitle?: string,
   customArtist?: string,
-): { track?: Track; error?: string } {
+): Promise<{ track?: Track; error?: string }> {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl.trim());
@@ -346,6 +438,8 @@ function parseProviderTrackFromUrl(
 
   const host = parsed.hostname.toLowerCase();
   const now = Date.now();
+  const cleanCustomTitle = (customTitle || '').trim().slice(0, 80);
+  const cleanCustomArtist = (customArtist || '').trim().slice(0, 80);
 
   // YouTube URL detection
   let youtubeId: string | null = null;
@@ -360,18 +454,50 @@ function parseProviderTrackFromUrl(
   }
 
   if (youtubeId && /^[A-Za-z0-9_-]{11}$/.test(youtubeId)) {
+    const canonicalYoutubeUrl = `https://www.youtube.com/watch?v=${youtubeId}`;
+    const oembed = await fetchJsonWithTimeout<{
+      title?: string;
+      author_name?: string;
+      thumbnail_url?: string;
+    }>(`https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalYoutubeUrl)}&format=json`);
+
+    const primaryThumb =
+      sanitizeExternalArtworkUrl(oembed?.thumbnail_url) ||
+      `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`;
+
+    const slideSet = Array.from(
+      new Set([
+        primaryThumb,
+        `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`,
+        `https://i.ytimg.com/vi/${youtubeId}/1.jpg`,
+        `https://i.ytimg.com/vi/${youtubeId}/2.jpg`,
+        `https://i.ytimg.com/vi/${youtubeId}/3.jpg`,
+      ]),
+    );
+
+    const resolvedTitle =
+      cleanCustomTitle ||
+      (oembed?.title ? String(oembed.title).trim().slice(0, 80) : '') ||
+      `YouTube Track (${youtubeId})`;
+    const resolvedArtist =
+      cleanCustomArtist ||
+      (oembed?.author_name
+        ? `${String(oembed.author_name).trim().slice(0, 52)} · YouTube`
+        : 'YouTube Stream (Approx. Sync)');
+
     return {
       track: {
         id: `yt-${youtubeId}-${now}`,
-        title: (customTitle || '').trim().slice(0, 80) || `YouTube Track (${youtubeId})`,
-        artist: (customArtist || '').trim().slice(0, 80) || 'YouTube Stream (Approx. Sync)',
+        title: resolvedTitle,
+        artist: resolvedArtist,
         durationSec: 210,
         bpm: 120,
         sourceType: 'external',
         provider: 'youtube',
         youtubeId,
-        externalUrl: `https://www.youtube.com/watch?v=${youtubeId}`,
-        artworkUrl: '/src/assets/images/cover_808_afterhours_1795418328427.jpg',
+        externalUrl: canonicalYoutubeUrl,
+        artworkUrl: primaryThumb,
+        slideUrls: slideSet,
         addedBy,
         addedByDeviceId,
         votes: [],
@@ -380,19 +506,40 @@ function parseProviderTrackFromUrl(
     };
   }
 
-  // Spotify URL detection
-  if (host === 'open.spotify.com' && parsed.pathname.includes('/track/')) {
+  // Spotify URL detection (tracks, albums, playlists, episodes, including localized paths)
+  if (
+    host === 'open.spotify.com' &&
+    /\/(track|album|playlist|episode)\//i.test(parsed.pathname)
+  ) {
+    const spotifyOembed = await fetchJsonWithTimeout<{
+      title?: string;
+      author_name?: string;
+      thumbnail_url?: string;
+    }>(`https://open.spotify.com/oembed?url=${encodeURIComponent(parsed.toString())}`);
+
+    const spotifyArt = sanitizeExternalArtworkUrl(spotifyOembed?.thumbnail_url);
+    const fallbackArt = '/src/assets/images/cover_boom_bap_1795418328317.jpg';
+    const artworkUrl = spotifyArt || fallbackArt;
+
     return {
       track: {
         id: `sp-${crypto.randomUUID()}`,
-        title: (customTitle || '').trim().slice(0, 80) || 'Spotify Track Cue',
-        artist: (customArtist || '').trim().slice(0, 80) || 'Spotify (Account / DRM Required)',
+        title:
+          cleanCustomTitle ||
+          (spotifyOembed?.title ? String(spotifyOembed.title).trim().slice(0, 80) : '') ||
+          'Spotify Track Cue',
+        artist:
+          cleanCustomArtist ||
+          (spotifyOembed?.author_name
+            ? `${String(spotifyOembed.author_name).trim().slice(0, 52)} · Spotify`
+            : 'Spotify (Account / DRM Required)'),
         durationSec: 180,
         bpm: 120,
         sourceType: 'external',
         provider: 'spotify',
         externalUrl: parsed.toString(),
-        artworkUrl: '/src/assets/images/cover_boom_bap_1795418328317.jpg',
+        artworkUrl,
+        slideUrls: [artworkUrl],
         addedBy,
         addedByDeviceId,
         votes: [],
@@ -403,17 +550,29 @@ function parseProviderTrackFromUrl(
 
   // Apple Music URL detection
   if (host === 'music.apple.com') {
+    const appleMeta = await fetchAppleMusicMeta(parsed.toString());
+    const fallbackArt = '/src/assets/images/cover_boom_bap_1795418328317.jpg';
+    const artworkUrl = appleMeta.artworkUrl || fallbackArt;
+
     return {
       track: {
         id: `am-${crypto.randomUUID()}`,
-        title: (customTitle || '').trim().slice(0, 80) || 'Apple Music Track Cue',
-        artist: (customArtist || '').trim().slice(0, 80) || 'Apple Music (Subscription Required)',
+        title:
+          cleanCustomTitle ||
+          (appleMeta.title ? appleMeta.title.slice(0, 80) : '') ||
+          'Apple Music Track Cue',
+        artist:
+          cleanCustomArtist ||
+          (appleMeta.artist
+            ? `${appleMeta.artist.slice(0, 52)} · Apple Music`
+            : 'Apple Music (Subscription Required)'),
         durationSec: 180,
         bpm: 120,
         sourceType: 'external',
         provider: 'apple_music',
         externalUrl: parsed.toString(),
-        artworkUrl: '/src/assets/images/cover_boom_bap_1795418328317.jpg',
+        artworkUrl,
+        slideUrls: [artworkUrl],
         addedBy,
         addedByDeviceId,
         votes: [],
@@ -422,21 +581,40 @@ function parseProviderTrackFromUrl(
     };
   }
 
+  // SoundCloud oEmbed metadata resolution on trusted host
+  let soundcloudArt: string | undefined;
+  let soundcloudTitle: string | undefined;
+  let soundcloudArtist: string | undefined;
+  if (host === 'soundcloud.com' || host === 'www.soundcloud.com') {
+    const scOembed = await fetchJsonWithTimeout<{
+      title?: string;
+      author_name?: string;
+      thumbnail_url?: string;
+    }>(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(parsed.toString())}`);
+    soundcloudArt = sanitizeExternalArtworkUrl(scOembed?.thumbnail_url);
+    soundcloudTitle = scOembed?.title ? String(scOembed.title).trim().slice(0, 80) : undefined;
+    soundcloudArtist = scOembed?.author_name
+      ? String(scOembed.author_name).trim().slice(0, 80)
+      : undefined;
+  }
+
   // Direct audio URL
   const fileLeaf = decodeURIComponent(parsed.pathname.split('/').pop() || '').replace(/\.[^/.]+$/, '');
   const provider: MusicProvider = 'direct_url';
+  const directArt = soundcloudArt || '/src/assets/images/cover_808_afterhours_1795418328427.jpg';
   return {
     track: {
       id: `url-${crypto.randomUUID()}`,
-      title: (customTitle || '').trim().slice(0, 80) || fileLeaf.slice(0, 80) || 'Direct Audio Stream',
-      artist: (customArtist || '').trim().slice(0, 80) || host,
+      title: cleanCustomTitle || soundcloudTitle || fileLeaf.slice(0, 80) || 'Direct Audio Stream',
+      artist: cleanCustomArtist || soundcloudArtist || host,
       durationSec: 180,
       bpm: 120,
       sourceType: 'external',
       provider,
       mediaUrl: parsed.toString(),
       externalUrl: parsed.toString(),
-      artworkUrl: '/src/assets/images/cover_808_afterhours_1795418328427.jpg',
+      artworkUrl: directArt,
+      slideUrls: [directArt],
       addedBy,
       addedByDeviceId,
       votes: [],
@@ -784,6 +962,7 @@ async function startServer() {
         createdAt: Date.now(),
       });
 
+      const uploadArtwork = '/src/assets/images/cover_808_afterhours_1795418328427.jpg';
       const newTrack: Track = {
         id: `upload-${mediaId}`,
         title: rawTitle || 'Uploaded Track',
@@ -793,7 +972,8 @@ async function startServer() {
         sourceType: 'uploaded',
         provider: 'uploaded',
         mediaUrl: `/api/media/${mediaId}`,
-        artworkUrl: '/src/assets/images/cover_808_afterhours_1795418328427.jpg',
+        artworkUrl: uploadArtwork,
+        slideUrls: [uploadArtwork],
         addedBy: rawAddedBy || 'Participant',
         addedByDeviceId: uploaderDeviceId,
         votes: [],
@@ -858,11 +1038,12 @@ async function startServer() {
       actionTimestamps: [],
     });
 
-    ws.on('message', (rawData) => {
-      if (Buffer.byteLength(rawData as Buffer) > 16_384) {
-        sendJson(ws, { type: 'room:error', message: 'Payload too large.' });
-        return;
-      }
+    ws.on('message', async (rawData) => {
+      try {
+        if (Buffer.byteLength(rawData as Buffer) > 16_384) {
+          sendJson(ws, { type: 'room:error', message: 'Payload too large.' });
+          return;
+        }
 
       let msg: ClientWsMessage;
       try {
@@ -1144,6 +1325,7 @@ async function startServer() {
           }
           const newTrack: Track = {
             ...preset,
+            slideUrls: preset.artworkUrl ? [preset.artworkUrl] : [],
             id: `builtin-${msg.builtinKey}-${now}`,
             addedBy: member.name,
             addedByDeviceId: member.id,
@@ -1162,19 +1344,28 @@ async function startServer() {
             sendJson(ws, { type: 'room:error', message: 'Only the host can add tracks in host-only mode.' });
             return;
           }
-          const result = parseProviderTrackFromUrl(
+          const targetRoomId = meta.roomId;
+          const memberId = member.id;
+          const memberName = member.name;
+          const result = await parseProviderTrackFromUrl(
             msg.url,
-            member.name,
-            member.id,
+            memberName,
+            memberId,
             msg.title,
             msg.artist,
           );
+          if (ws.readyState !== WebSocket.OPEN) return;
+          const latestRecord = rooms.get(targetRoomId);
+          if (!latestRecord) return;
+          const latestRoom = latestRecord.state;
+          if (!latestRoom.devices.some((d) => d.id === memberId)) return;
+
           if (result.error || !result.track) {
             sendJson(ws, { type: 'room:error', message: result.error || 'Unsupported track URL.' });
             return;
           }
           const candidate = result.track;
-          const isDup = room.queue.some(
+          const isDup = latestRoom.queue.some(
             (t) =>
               (candidate.youtubeId && t.youtubeId === candidate.youtubeId) ||
               (candidate.externalUrl && t.externalUrl === candidate.externalUrl),
@@ -1183,11 +1374,11 @@ async function startServer() {
             sendJson(ws, { type: 'room:error', message: 'That track is already in the playlist.' });
             return;
           }
-          room.queue.push(candidate);
-          reorderUpcomingByVotes(room);
-          appendSystemChat(room, `${member.name} added "${candidate.title}".`);
-          room.updatedAt = now;
-          broadcastRoomState(room);
+          latestRoom.queue.push(candidate);
+          reorderUpcomingByVotes(latestRoom);
+          appendSystemChat(latestRoom, `${memberName} added "${candidate.title}".`);
+          latestRoom.updatedAt = Date.now();
+          broadcastRoomState(latestRoom);
           break;
         }
         case 'queue:vote': {
@@ -1307,6 +1498,10 @@ async function startServer() {
           broadcastRoomState(room);
           break;
         }
+      }
+      } catch (err) {
+        console.error('WebSocket message error:', err);
+        sendJson(ws, { type: 'room:error', message: 'Unable to process room action.' });
       }
     });
 

@@ -30,6 +30,7 @@ export interface Track {
   externalUrl?: string;
   youtubeId?: string;
   artworkUrl?: string;
+  slideUrls?: string[];
   addedBy: string;
   addedByDeviceId: string;
   votes: string[];

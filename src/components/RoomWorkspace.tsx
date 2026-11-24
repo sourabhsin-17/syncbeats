@@ -32,6 +32,7 @@ import { useSyncRoom } from '../hooks/useSyncRoom';
 import { getBuiltinTrackUrl } from '../lib/audioEngine';
 import { YouTubeSyncPlayer } from './YouTubeSyncPlayer';
 import { AmbientSoundCanvas } from './AmbientSoundCanvas';
+import { MovingCoverStage } from './MovingCoverStage';
 import type { RoomDevice, Track } from '../../shared/types';
 
 interface RoomWorkspaceProps {
@@ -881,6 +882,12 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
                     </div>
                   </div>
 
+                  {/* Animated Song Front-Page Cover Slides */}
+                  <MovingCoverStage
+                    track={currentTrack}
+                    isPlaying={Boolean(roomState?.isPlaying)}
+                  />
+
                   {/* Provider-specific embed or notice */}
                   {currentTrack.provider === 'youtube' && currentTrack.youtubeId && (
                     <div className="mt-6">
@@ -1124,8 +1131,8 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <p className="text-[11px] text-zinc-400">
-                          Direct MP3/WAV syncs sub-25 ms. YouTube syncs ~150–400 ms. Spotify/Apple
-                          create cue cards.
+                          YouTube, Spotify, Apple Music &amp; SoundCloud links automatically pull
+                          cover slides. Direct MP3/WAV syncs sub-25 ms.
                         </p>
                         <button
                           type="submit"

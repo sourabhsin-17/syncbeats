@@ -10,7 +10,6 @@ import {
   Lock,
   Pause,
   Play,
-  Radio,
   RefreshCw,
   Smartphone,
   Tablet,
@@ -19,6 +18,8 @@ import {
 } from 'lucide-react';
 import { getBuiltinTrackUrl, LandingSyncDemoAudio } from '../lib/audioEngine';
 import { AmbientSoundCanvas } from './AmbientSoundCanvas';
+import { SignalMonitorDeck } from './SignalMonitorDeck';
+import { SignalPatchLab } from './SignalPatchLab';
 import type {
   BuiltinBeatKey,
   ControlMode,
@@ -64,7 +65,8 @@ const FEATURED_BEATS: FeaturedBeat[] = [
     accent: '#FF4D1C',
     glowClass: 'glow-flame',
     cover: '/src/assets/images/cover_808_afterhours_1795418328427.jpg',
-    summary: 'Heavy sub-bass slides, crisp double-time hats, and late-night minor bell stabs engineered to punch through phone speakers.',
+    summary:
+      'Heavy sub-bass slides, crisp double-time hats, and late-night minor bell stabs engineered to punch through phone speakers.',
     pocketNote: 'Half-time snare snap · C minor sub',
   },
   {
@@ -76,7 +78,8 @@ const FEATURED_BEATS: FeaturedBeat[] = [
     accent: '#5DCAA5',
     glowClass: 'glow-cyan',
     cover: '/src/assets/images/cover_boom_bap_1795418328317.jpg',
-    summary: 'Dusty vinyl crackle, swung MPC kicks, and warm electric keys cut straight from a basement tape session.',
+    summary:
+      'Dusty vinyl crackle, swung MPC kicks, and warm electric keys cut straight from a basement tape session.',
     pocketNote: 'Swing 58% · Rhodes chop',
   },
   {
@@ -88,7 +91,8 @@ const FEATURED_BEATS: FeaturedBeat[] = [
     accent: '#67E8F9',
     glowClass: 'glow-cyan',
     cover: '/src/assets/images/cover_concrete_cypher_1795418328402.jpg',
-    summary: 'Rubber-band synth basslines, crisp handclaps, and high-glide whistle leads built for rooftop cyphers.',
+    summary:
+      'Rubber-band synth basslines, crisp handclaps, and high-glide whistle leads built for rooftop cyphers.',
     pocketNote: 'Talkbox-style lead · Sun-baked bounce',
   },
   {
@@ -100,7 +104,8 @@ const FEATURED_BEATS: FeaturedBeat[] = [
     accent: '#8B5CF6',
     glowClass: 'glow-violet',
     cover: '/src/assets/images/cover_southside_drill_1795551465534.jpg',
-    summary: 'Syncopated counter-snares and pitch-gliding 808 drops tuned to lock multiple devices into one chest-rattling pocket.',
+    summary:
+      'Syncopated counter-snares and pitch-gliding 808 drops tuned to lock multiple devices into one chest-rattling pocket.',
     pocketNote: 'Off-beat snare pocket · Pitch glide 808',
   },
   {
@@ -112,7 +117,8 @@ const FEATURED_BEATS: FeaturedBeat[] = [
     accent: '#E879F9',
     glowClass: 'glow-violet',
     cover: '/src/assets/images/cover_lofi_tape_1795551465579.jpg',
-    summary: 'Warm cassette saturation, laid-back jazz sevenths, and soft brushed drums for study nights and chill hangs.',
+    summary:
+      'Warm cassette saturation, laid-back jazz sevenths, and soft brushed drums for study nights and chill hangs.',
     pocketNote: 'SP-404 tape wow · Rain-soaked chords',
   },
   {
@@ -124,9 +130,26 @@ const FEATURED_BEATS: FeaturedBeat[] = [
     accent: '#F59E0B',
     glowClass: 'glow-flame',
     cover: '/src/assets/images/cover_golden_soul_1795551466591.jpg',
-    summary: 'Deep pocket electric bass, lush neo-soul voicings, and crisp rimshots made for passing the aux around the circle.',
+    summary:
+      'Deep pocket electric bass, lush neo-soul voicings, and crisp rimshots made for passing the aux around the circle.',
     pocketNote: '90s vinyl warmth · Pocket rimshot',
   },
+];
+
+const HERO_INDEX_COLS = [
+  { num: '01', label: 'Beat Crate', href: '#beats' },
+  { num: '02', label: 'Signal Patch', href: '#patch' },
+  { num: '03', label: 'Soundcheck', href: '#demo' },
+  { num: '04', label: 'Live Rooms', href: '#rooms' },
+];
+
+const STACK_TOOLKIT = [
+  'Web Audio WAV',
+  'NTP Clock Anchor',
+  'WebSocket Mesh',
+  'Scrypt Room Locks',
+  'MP3 & YouTube Cue',
+  'Live Room Chat',
 ];
 
 const VIRTUAL_DEVICES = [
@@ -175,7 +198,7 @@ const FAQ_ITEMS = [
   },
 ];
 
-const HERO_TYPED_LINE = 'Multi-Phone Sound System · Sub-25 ms Clock Lock';
+const HERO_TYPED_LINE = 'OUT 01 · MULTI-PHONE SOUND SYSTEM · SUB-25 MS LOCK';
 
 export function LandingPage({
   onCreateRoom,
@@ -210,7 +233,7 @@ export function LandingPage({
   const [manifestoVisible, setManifestoVisible] = useState(false);
   const [scrambleStats, setScrambleStats] = useState({
     beats: '6',
-    drift: '25ms',
+    drift: '<25ms',
     phones: '50',
     apps: '0',
   });
@@ -226,7 +249,6 @@ export function LandingPage({
   const [demoSynced, setDemoSynced] = useState(true);
   const [demoStep, setDemoStep] = useState(0);
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
-  const [heroImgFailed, setHeroImgFailed] = useState(false);
 
   const demoAudioRef = useRef<LandingSyncDemoAudio | null>(null);
 
@@ -268,7 +290,7 @@ export function LandingPage({
       if (idx >= HERO_TYPED_LINE.length) {
         window.clearInterval(timer);
       }
-    }, 28);
+    }, 24);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -458,6 +480,10 @@ export function LandingPage({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const jumpToDemo = () => {
+    document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   const combinedJoinError = localJoinError || joinError;
   const activeDossier = selectedDossierKey
     ? FEATURED_BEATS.find((b) => b.key === selectedDossierKey) ?? null
@@ -465,7 +491,7 @@ export function LandingPage({
   const isAudioActive = Boolean(playingBeatKey) || demoRunning;
 
   return (
-    <div className="relative min-h-screen bg-[#06050E] text-[#E6EDF7] overflow-x-clip">
+    <div className="relative min-h-screen bg-[#06050E] text-[#F4F1EA] overflow-x-clip">
       <AmbientSoundCanvas active={isAudioActive} />
 
       <audio
@@ -475,30 +501,30 @@ export function LandingPage({
       />
 
       {/* Strict 3-Zone Floating Glass Top Bar */}
-      <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#06050E]/75 backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#06050E]/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-8 px-6 py-4">
           <a
             href="#top"
-            className="font-display text-xl font-extrabold tracking-tight text-[#E6EDF7] whitespace-nowrap shrink-0"
+            className="font-display text-xl font-extrabold tracking-tight text-[#F4F1EA] whitespace-nowrap shrink-0"
           >
             SyncBeats
           </a>
 
           <nav
             aria-label="Primary"
-            className="hidden md:flex items-center gap-7 text-sm font-medium text-[#A7A3C7]"
+            className="hidden md:flex items-center gap-7 text-sm font-medium text-[#8A8780]"
           >
-            <a
-              href="#manifesto"
-              className="hover:text-[#67E8F9] transition-colors duration-150 whitespace-nowrap shrink-0"
-            >
-              Vibe
-            </a>
             <a
               href="#beats"
               className="hover:text-[#67E8F9] transition-colors duration-150 whitespace-nowrap shrink-0"
             >
               Beat Crate
+            </a>
+            <a
+              href="#patch"
+              className="hover:text-[#67E8F9] transition-colors duration-150 whitespace-nowrap shrink-0"
+            >
+              Signal Patch
             </a>
             <a
               href="#demo"
@@ -534,24 +560,24 @@ export function LandingPage({
       </header>
 
       <main id="top" className="relative z-10">
-        {/* Section 1: Atmospheric Hero Stage + Polaroid Crew Shots */}
+        {/* Section 1: Fused CRT Signal Monitor + Atmospheric Hero + 01-04 Editorial Index */}
         <section className="hero-gradient-stage border-b border-white/[0.08]">
-          <div className="mx-auto max-w-[1280px] px-6 pt-12 pb-20 lg:pt-16 lg:pb-24">
+          <div className="mx-auto max-w-[1280px] px-6 pt-10 pb-14 lg:pt-14 lg:pb-18">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-stretch">
               <div className="lg:col-span-6 flex flex-col justify-between">
                 <div>
-                  <p className="font-mono text-xs sm:text-sm text-[#67E8F9] tracking-tight mb-4 min-h-[1.5em]">
+                  <p className="font-mono text-xs text-[#67E8F9] tracking-wider mb-4 min-h-[1.5em]">
                     <span>{HERO_TYPED_LINE.slice(0, typedChars)}</span>
                     <span
                       aria-hidden="true"
-                      className="inline-block w-2 h-4 bg-[#FF4D1C] ml-1 align-middle"
+                      className="inline-block w-2 h-3.5 bg-[#FF4D1C] ml-1 align-middle"
                     />
                   </p>
 
                   <h1
-                    className="font-display font-extrabold tracking-[-0.03em] text-[#E6EDF7] leading-[1.0]"
+                    className="font-display font-extrabold tracking-[-0.03em] text-[#F4F1EA] leading-[1.0]"
                     style={{
-                      fontSize: 'clamp(2.65rem, 5vw, 4.45rem)',
+                      fontSize: 'clamp(2.65rem, 4.9vw, 4.35rem)',
                       textWrap: 'balance',
                     }}
                   >
@@ -560,9 +586,9 @@ export function LandingPage({
                   </h1>
 
                   <p className="mt-5 text-base sm:text-lg text-[#A7A3C7] leading-relaxed max-w-[50ch]">
-                    Turn every phone at the kickback into one synchronized speaker wall. Open a
-                    room, scan the QR, vote the next 808 to the top, and talk live straight in your
-                    browser.
+                    Real-time browser synchronization meets tactile beat culture. Open a session,
+                    pass the QR code, route tracks into the queue, and lock every phone to the same
+                    pocket.
                   </p>
 
                   <div className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
@@ -588,12 +614,12 @@ export function LandingPage({
                         }}
                         placeholder="Room code (e.g. SB4829)"
                         aria-label="Room code"
-                        className="flex-1 sm:w-48 px-3.5 py-3.5 text-sm font-mono uppercase tracking-wider glass-inset rounded-xl text-[#E6EDF7] placeholder:text-[#A7A3C7]/60 placeholder:normal-case placeholder:tracking-normal focus:border-[#67E8F9] focus:outline-none"
+                        className="flex-1 sm:w-48 px-3.5 py-3.5 text-sm font-mono uppercase tracking-wider glass-inset rounded-xl text-[#F4F1EA] placeholder:text-[#8A8780] placeholder:normal-case placeholder:tracking-normal focus:border-[#67E8F9] focus:outline-none"
                       />
                       <button
                         type="submit"
                         disabled={isJoining || roomCodeInput.trim().length < 4}
-                        className="px-4 py-3.5 text-sm font-semibold text-[#E6EDF7] glass hover:border-[#67E8F9]/50 disabled:opacity-40 rounded-xl transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer"
+                        className="px-4 py-3.5 text-sm font-semibold text-[#F4F1EA] glass hover:border-[#67E8F9]/50 disabled:opacity-40 rounded-xl transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer"
                       >
                         {isJoining ? 'Checking...' : 'Join'}
                       </button>
@@ -607,144 +633,79 @@ export function LandingPage({
                   )}
                 </div>
 
-                <div className="mt-10 pt-6 border-t border-white/[0.08] flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-[#A7A3C7]">
-                  <span>6 built-in Hip-Hop &amp; 808 cuts</span>
-                  <span aria-hidden="true">·</span>
-                  <span>Works across 5G &amp; Wi-Fi</span>
-                  <span aria-hidden="true">·</span>
-                  <span>MP3 uploads, YouTube, voting &amp; chat</span>
+                {/* Slash-separated hardware & engine spec line (inspired by mayakhalil.com .kit) */}
+                <div className="mt-10 pt-5 border-t border-white/[0.1] flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs">
+                  <span className="font-mono uppercase tracking-widest text-[#FF4D1C] mr-1">
+                    Engine
+                  </span>
+                  {STACK_TOOLKIT.map((item) => (
+                    <span key={item} className="kit-slash-item text-[#A7A3C7]">
+                      {item}
+                    </span>
+                  ))}
                 </div>
               </div>
 
-              {/* Hero Visual Stage with Playful Tilted Polaroid Snapshots */}
-              <div className="lg:col-span-6 relative">
-                <div className="relative h-full min-h-[340px] lg:min-h-[470px] rounded-2xl overflow-hidden glass glow-violet">
-                  {!heroImgFailed ? (
-                    <img
-                      src="/src/assets/images/hero_cypher_session_1795418328368.jpg"
-                      alt="Friends in a late-night loft studio syncing laptops, studio monitors, and smartphones"
-                      referrerPolicy="no-referrer"
-                      onError={() => setHeroImgFailed(true)}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-gradient-to-br from-[#131126] via-[#06050E] to-[#2B123C] text-center">
-                      <Radio className="w-10 h-10 text-[#67E8F9] mb-3" />
-                      <p className="font-display text-lg font-bold text-[#E6EDF7]">
-                        Late-Night Cypher Session
-                      </p>
-                      <p className="text-sm text-[#A7A3C7] mt-1 max-w-xs">
-                        Every phone in the room locked to the same 808 drop.
-                      </p>
-                    </div>
-                  )}
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#06050E]/90 via-[#06050E]/20 to-transparent" />
-
-                  {/* Playful Polaroid-style instant-play previews (inspired by reference Polaroid Road) */}
-                  <div className="absolute bottom-5 left-5 right-5 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => void toggleBeatPreview('afterhours')}
-                        aria-label={
-                          playingBeatKey === 'afterhours'
-                            ? 'Pause 808 Afterhours'
-                            : 'Play 808 Afterhours preview'
-                        }
-                        className="group w-24 p-1.5 pb-2.5 bg-[#F4F0E6] text-[#0B0A16] rounded-md shadow-xl transform -rotate-3 hover:rotate-0 transition-transform duration-200 text-left cursor-pointer"
-                      >
-                        <div className="relative aspect-square w-full overflow-hidden rounded-sm bg-[#131126]">
-                          <img
-                            src="/src/assets/images/cover_808_afterhours_1795418328427.jpg"
-                            alt="808 Afterhours"
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover"
-                          />
-                          <span className="absolute inset-0 flex items-center justify-center bg-black/35 group-hover:bg-black/50 transition-colors">
-                            {playingBeatKey === 'afterhours' ? (
-                              <Pause className="w-4 h-4 text-[#67E8F9]" />
-                            ) : (
-                              <Play className="w-4 h-4 text-white ml-0.5" />
-                            )}
-                          </span>
-                        </div>
-                        <p className="mt-1.5 font-mono text-[10px] font-bold tracking-tight truncate">
-                          808 Afterhours
-                        </p>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => void toggleBeatPreview('boombap')}
-                        aria-label={
-                          playingBeatKey === 'boombap'
-                            ? 'Pause 94 Boom Bap'
-                            : 'Play 94 Boom Bap preview'
-                        }
-                        className="hidden sm:block group w-24 p-1.5 pb-2.5 bg-[#F4F0E6] text-[#0B0A16] rounded-md shadow-xl transform rotate-3 hover:rotate-0 transition-transform duration-200 text-left cursor-pointer"
-                      >
-                        <div className="relative aspect-square w-full overflow-hidden rounded-sm bg-[#131126]">
-                          <img
-                            src="/src/assets/images/cover_boom_bap_1795418328317.jpg"
-                            alt="94 Boom Bap"
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover"
-                          />
-                          <span className="absolute inset-0 flex items-center justify-center bg-black/35 group-hover:bg-black/50 transition-colors">
-                            {playingBeatKey === 'boombap' ? (
-                              <Pause className="w-4 h-4 text-[#67E8F9]" />
-                            ) : (
-                              <Play className="w-4 h-4 text-white ml-0.5" />
-                            )}
-                          </span>
-                        </div>
-                        <p className="mt-1.5 font-mono text-[10px] font-bold tracking-tight truncate">
-                          94 Boom Bap
-                        </p>
-                      </button>
-                    </div>
-
-                    <div className="text-left sm:text-right text-xs text-[#E6EDF7]">
-                      <div className="font-medium">Loft session · 6 synced phones</div>
-                      <div className="font-mono text-[#67E8F9] tabular-nums mt-0.5">
-                        Tap a snapshot to audition
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              {/* Right 6 Columns: CRT Signal Monitor Deck with Channel Switcher & Polaroids */}
+              <div className="lg:col-span-6">
+                <SignalMonitorDeck
+                  playingBeatKey={playingBeatKey}
+                  demoRunning={demoRunning}
+                  onToggleBeatPreview={(k) => void toggleBeatPreview(k)}
+                />
               </div>
             </div>
+
+            {/* 01-04 Editorial Section Index Bar (inspired by mayakhalil.com .cols) */}
+            <nav
+              aria-label="Section index"
+              className="mt-12 pt-8 border-t border-white/[0.1] grid grid-cols-2 md:grid-cols-4 gap-6"
+            >
+              {HERO_INDEX_COLS.map((col) => (
+                <a
+                  key={col.num}
+                  href={col.href}
+                  className="group block pr-4 focus:outline-none"
+                >
+                  <span className="block font-display font-extrabold text-4xl sm:text-5xl leading-none tracking-wider step-num-sweep tabular-nums">
+                    {col.num}
+                  </span>
+                  <span className="block mt-2 font-mono text-xs uppercase tracking-[0.24em] text-[#8A8780] group-hover:text-[#FF4D1C] transition-colors">
+                    {col.label}
+                  </span>
+                </a>
+              ))}
+            </nav>
           </div>
         </section>
 
-        {/* Section 2: Kinetic Manifesto & Scrambler Telemetry (Inspired by Reference Section 2) */}
+        {/* Section 2: Kinetic Manifesto & Scrambler Telemetry (from websites-smoky-two) */}
         <section
           ref={manifestoRef}
           id="manifesto"
-          className="relative border-b border-white/[0.08] py-24 lg:py-32 overflow-hidden"
+          className="relative border-b border-white/[0.08] py-20 lg:py-28 overflow-hidden"
         >
           <div className="mx-auto max-w-[1280px] px-6">
             <div className="max-w-4xl mx-auto">
               <div
-                className={`inline-block font-mono text-sm sm:text-base text-[#A7A3C7] tracking-wider transform transition-all duration-700 ${
+                className={`inline-block font-mono text-sm sm:text-base text-[#8A8780] tracking-wider transform transition-all duration-700 ${
                   manifestoVisible
                     ? 'translate-y-0 opacity-100 -rotate-2'
                     : '-translate-y-6 opacity-0 rotate-0'
                 }`}
               >
-                we turn phones into
+                we turn every device into
               </div>
 
               <div className="relative my-3 inline-block max-w-full">
                 <h2
-                  className={`font-display font-extrabold text-[13vw] sm:text-7xl lg:text-[7.2rem] text-[#E6EDF7] tracking-tight leading-none transform transition-all duration-700 ${
+                  className={`font-display font-extrabold text-[13vw] sm:text-7xl lg:text-[7rem] text-[#F4F1EA] tracking-tight leading-none transform transition-all duration-700 ${
                     manifestoVisible ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
                   }`}
                 >
                   ONE CYPHER
                 </h2>
 
-                {/* Hand-drawn animated SVG loop */}
                 <svg
                   aria-hidden="true"
                   className="pointer-events-none absolute -inset-x-4 -inset-y-3 w-[108%] h-[122%] text-[#67E8F9]"
@@ -763,7 +724,6 @@ export function LandingPage({
                 </svg>
               </div>
 
-              {/* Bold kinetic action triad with animated wavy underlines */}
               <div className="flex flex-wrap items-center gap-6 sm:gap-10 mt-8">
                 <div className="relative inline-block transform -rotate-2">
                   <span className="font-display font-extrabold text-3xl sm:text-5xl text-[#5DCAA5]">
@@ -823,7 +783,6 @@ export function LandingPage({
                 </div>
               </div>
 
-              {/* 4-Column Scrambler Spec Strip */}
               <div className="mt-14 grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="glass rounded-2xl p-5">
                   <div className="font-mono text-2xl sm:text-3xl font-bold text-[#67E8F9] tabular-nums">
@@ -838,13 +797,13 @@ export function LandingPage({
                   <div className="mt-1 text-xs text-[#A7A3C7]">Clock-lock accuracy</div>
                 </div>
                 <div className="glass rounded-2xl p-5">
-                  <div className="font-mono text-2xl sm:text-3xl font-bold text-[#E6EDF7] tabular-nums">
+                  <div className="font-mono text-2xl sm:text-3xl font-bold text-[#F4F1EA] tabular-nums">
                     {scrambleStats.phones}
                   </div>
                   <div className="mt-1 text-xs text-[#A7A3C7]">Max synced devices / room</div>
                 </div>
                 <div className="glass rounded-2xl p-5">
-                  <div className="font-mono text-2xl sm:text-3xl font-bold text-[#FF6438] tabular-nums">
+                  <div className="font-mono text-2xl sm:text-3xl font-bold text-[#FF4D1C] tabular-nums">
                     {scrambleStats.apps}
                   </div>
                   <div className="mt-1 text-xs text-[#A7A3C7]">App downloads required</div>
@@ -854,16 +813,16 @@ export function LandingPage({
           </div>
         </section>
 
-        {/* Section 3: Interactive Beat Crate + Expandable Beat Dossier (Inspired by Reference Verticals Stack) */}
+        {/* Section 3: Interactive Beat Crate + Expandable Beat Dossier */}
         <section id="beats" className="relative border-b border-white/[0.08] py-20 lg:py-24">
           <div className="mx-auto max-w-[1280px] px-6">
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-10 pb-6 border-b border-white/15">
               <div>
-                <p className="text-sm font-semibold text-[#67E8F9] mb-1.5">
-                  Loaded in Every Room
+                <p className="font-mono text-xs sm:text-sm text-[#67E8F9] uppercase tracking-wider mb-1.5">
+                  01 · Built-In Beat Crate
                 </p>
                 <h2
-                  className="font-display text-2xl sm:text-4xl font-extrabold tracking-tight text-[#E6EDF7]"
+                  className="font-display text-2xl sm:text-4xl font-extrabold tracking-tight text-[#F4F1EA]"
                   style={{ textWrap: 'balance' }}
                 >
                   Tap any cut to audition—or open its beat dossier
@@ -883,7 +842,7 @@ export function LandingPage({
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(true)}
-                  className="px-5 py-2.5 text-xs font-bold text-[#E6EDF7] glass hover:border-[#67E8F9]/50 rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  className="px-5 py-2.5 text-xs font-bold text-[#F4F1EA] glass hover:border-[#67E8F9]/50 rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   Spin Crate in a Room
                 </button>
@@ -891,7 +850,6 @@ export function LandingPage({
             </div>
 
             {activeDossier ? (
-              /* Expanded Interactive Beat Dossier View */
               <div
                 className={`glass ${activeDossier.glowClass} rounded-3xl p-6 sm:p-10 relative overflow-hidden`}
                 style={{ borderColor: `${activeDossier.accent}55` }}
@@ -940,18 +898,18 @@ export function LandingPage({
                       <span>{activeDossier.producer}</span>
                     </div>
 
-                    <h3 className="font-display text-3xl sm:text-5xl font-extrabold text-[#E6EDF7] tracking-tight">
+                    <h3 className="font-display text-3xl sm:text-5xl font-extrabold text-[#F4F1EA] tracking-tight">
                       {activeDossier.title}
                     </h3>
 
-                    <p className="mt-4 text-base text-[#E6EDF7]/85 leading-relaxed max-w-[55ch]">
+                    <p className="mt-4 text-base text-[#F4F1EA]/85 leading-relaxed max-w-[55ch]">
                       {activeDossier.summary}
                     </p>
 
                     <div className="mt-6 glass-inset rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
                       <div>
-                        <div className="text-[11px] font-mono text-[#A7A3C7]">Groove Spec</div>
-                        <div className="text-sm font-medium text-[#E6EDF7] mt-0.5">
+                        <div className="text-[11px] font-mono text-[#8A8780]">Groove Spec</div>
+                        <div className="text-sm font-medium text-[#F4F1EA] mt-0.5">
                           {activeDossier.pocketNote}
                         </div>
                       </div>
@@ -986,7 +944,7 @@ export function LandingPage({
                       <button
                         type="button"
                         onClick={() => setShowCreateModal(true)}
-                        className="px-5 py-3 rounded-xl text-xs font-bold text-[#E6EDF7] glass hover:border-[#67E8F9]/60 transition-colors cursor-pointer"
+                        className="px-5 py-3 rounded-xl text-xs font-bold text-[#F4F1EA] glass hover:border-[#67E8F9]/60 transition-colors cursor-pointer"
                       >
                         Drop Room with This Crate
                       </button>
@@ -995,7 +953,6 @@ export function LandingPage({
                 </div>
               </div>
             ) : (
-              /* Interactive Color-Coded Glass Beat Cards */
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {FEATURED_BEATS.map((beat) => {
                   const isPlaying = playingBeatKey === beat.key;
@@ -1053,10 +1010,10 @@ export function LandingPage({
                               {beat.bpm} BPM
                             </span>
                           </div>
-                          <h3 className="font-display text-lg font-bold text-[#E6EDF7] truncate mt-0.5">
+                          <h3 className="font-display text-lg font-bold text-[#F4F1EA] truncate mt-0.5">
                             {beat.title}
                           </h3>
-                          <p className="text-xs text-[#A7A3C7] truncate mt-0.5">{beat.producer}</p>
+                          <p className="text-xs text-[#8A8780] truncate mt-0.5">{beat.producer}</p>
                         </div>
                       </div>
 
@@ -1078,11 +1035,16 @@ export function LandingPage({
           </div>
         </section>
 
-        {/* Section 4: Tactile Pocket Sync Console (3-Phone 808 Soundcheck) */}
+        {/* Section 4: TouchDesigner-Style Interactive Signal Patch Network */}
+        <SignalPatchLab
+          onJumpToDemo={jumpToDemo}
+          onStartRoom={() => setShowCreateModal(true)}
+        />
+
+        {/* Section 5: Tactile Pocket Soundcheck Console (3-Phone 808 Soundcheck) */}
         <section id="demo" className="relative border-b border-white/[0.08] py-20 lg:py-24">
           <div className="mx-auto max-w-[1280px] px-6">
             <div className="glass glow-cyan rounded-3xl p-6 sm:p-10 relative">
-              {/* Subtle tactile chassis rivets */}
               <div aria-hidden="true" className="hidden sm:flex justify-between mb-6 opacity-35">
                 <span className="w-2.5 h-2.5 rounded-full border border-white/40 bg-white/10" />
                 <span className="w-2.5 h-2.5 rounded-full border border-white/40 bg-white/10" />
@@ -1090,11 +1052,11 @@ export function LandingPage({
 
               <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-9">
                 <div>
-                  <p className="font-mono text-xs sm:text-sm text-[#67E8F9] mb-1.5">
-                    Pocket Soundcheck Console
+                  <p className="font-mono text-xs sm:text-sm text-[#67E8F9] uppercase tracking-wider mb-1.5">
+                    03 · Pocket Soundcheck Console
                   </p>
                   <h2
-                    className="font-display text-2xl sm:text-4xl font-extrabold tracking-tight text-[#E6EDF7]"
+                    className="font-display text-2xl sm:text-4xl font-extrabold tracking-tight text-[#F4F1EA]"
                     style={{ textWrap: 'balance' }}
                   >
                     Hear echo drift snap into one 808 pocket
@@ -1171,13 +1133,13 @@ export function LandingPage({
                     >
                       <div className="md:col-span-4 flex items-center gap-3.5 min-w-0">
                         <div className="w-10 h-10 rounded-xl glass-chip flex items-center justify-center shrink-0">
-                          <Icon className="w-5 h-5 text-[#E6EDF7]" />
+                          <Icon className="w-5 h-5 text-[#F4F1EA]" />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-sm font-semibold text-[#E6EDF7] truncate">
+                          <div className="text-sm font-semibold text-[#F4F1EA] truncate">
                             {device.name}
                           </div>
-                          <div className="text-xs text-[#A7A3C7]">{device.network}</div>
+                          <div className="text-xs text-[#8A8780]">{device.network}</div>
                         </div>
                       </div>
 
@@ -1200,7 +1162,7 @@ export function LandingPage({
                       </div>
 
                       <div className="md:col-span-3 flex items-center justify-between md:justify-end gap-4 text-xs">
-                        <span className="font-mono text-[#E6EDF7] tabular-nums">
+                        <span className="font-mono text-[#F4F1EA] tabular-nums">
                           +{offset.toFixed(1)} ms
                         </span>
                         <span
@@ -1208,7 +1170,7 @@ export function LandingPage({
                             demoSynced
                               ? 'text-[#67E8F9] font-semibold'
                               : offset === 0
-                                ? 'text-[#A7A3C7]'
+                                ? 'text-[#8A8780]'
                                 : 'text-rose-400 font-semibold'
                           }
                         >
@@ -1223,11 +1185,10 @@ export function LandingPage({
           </div>
         </section>
 
-        {/* Section 5: "The Next Speaker Is Yours" Tilted Card Stack + Live Public Rooms (Inspired by Reference Join Section) */}
+        {/* Section 6: "The Next Speaker Is Yours" Tilted Card Stack + Live Public Rooms */}
         <section id="rooms" className="relative border-b border-white/[0.08] py-24">
           <div className="mx-auto max-w-[1280px] px-6">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-              {/* Left 5 Columns: Playful Tilted Glowing Stack */}
               <div className="lg:col-span-5 flex flex-col items-center">
                 <p className="font-mono text-xs text-[#67E8F9] uppercase font-bold tracking-widest mb-6">
                   The Next Speaker Is Yours
@@ -1240,34 +1201,35 @@ export function LandingPage({
                     className="w-full p-4 rounded-2xl glass glow-cyan border-dashed border-[#67E8F9]/60 text-center cursor-pointer hover:brightness-110 transition-all"
                   >
                     <span className="font-display font-extrabold text-2xl text-[#67E8F9]">YOU</span>
-                    <div className="font-mono text-[10px] text-[#E6EDF7]/90 uppercase font-bold mt-0.5">
+                    <div className="font-mono text-[10px] text-[#F4F1EA]/90 uppercase font-bold mt-0.5">
                       Tap to claim host deck
                     </div>
                   </button>
 
-                  <div className="p-3.5 rounded-2xl glass glow-violet text-[#E6EDF7] font-display font-bold text-base flex items-center justify-between">
+                  <div className="p-3.5 rounded-2xl glass glow-violet text-[#F4F1EA] font-display font-bold text-base flex items-center justify-between">
                     <span>Aux Host</span>
                     <span className="font-mono text-[11px] text-[#A7A3C7]">MAC / SAFARI</span>
                   </div>
 
-                  <div className="p-3.5 rounded-2xl glass glow-flame text-[#E6EDF7] font-display font-bold text-base flex items-center justify-between">
+                  <div className="p-3.5 rounded-2xl glass glow-flame text-[#F4F1EA] font-display font-bold text-base flex items-center justify-between">
                     <span>Pocket 5G</span>
                     <span className="font-mono text-[11px] text-[#FF6438]">IPHONE / IOS</span>
                   </div>
 
-                  <div className="p-3.5 rounded-2xl glass text-[#E6EDF7] font-display font-bold text-base flex items-center justify-between">
+                  <div className="p-3.5 rounded-2xl glass text-[#F4F1EA] font-display font-bold text-base flex items-center justify-between">
                     <span>Speaker Wall</span>
                     <span className="font-mono text-[11px] text-[#5DCAA5]">SUB-25 MS</span>
                   </div>
                 </div>
               </div>
 
-              {/* Right 7 Columns: Live Public Rooms Directory */}
               <div className="lg:col-span-7">
-                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6 pb-4 border-b border-white/15">
                   <div>
-                    <p className="text-sm font-semibold text-[#FF6438] mb-1">Open Sessions</p>
-                    <h2 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-[#E6EDF7]">
+                    <p className="font-mono text-xs text-[#FF4D1C] uppercase tracking-wider mb-1">
+                      04 · Live Sessions
+                    </p>
+                    <h2 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-[#F4F1EA]">
                       Jump into a live public room
                     </h2>
                   </div>
@@ -1277,7 +1239,7 @@ export function LandingPage({
                       type="button"
                       onClick={() => void fetchPublicRooms()}
                       disabled={loadingRooms}
-                      className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-[#E6EDF7] glass hover:border-[#67E8F9]/40 rounded-xl transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-[#F4F1EA] glass hover:border-[#67E8F9]/40 rounded-xl transition-colors cursor-pointer"
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${loadingRooms ? 'animate-spin' : ''}`} />
                       <span>Refresh</span>
@@ -1299,7 +1261,7 @@ export function LandingPage({
                 ) : publicRooms.length === 0 ? (
                   <div className="glass rounded-2xl p-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                      <p className="text-base font-semibold text-[#E6EDF7]">
+                      <p className="text-base font-semibold text-[#F4F1EA]">
                         No public rooms live yet
                       </p>
                       <p className="text-sm text-[#A7A3C7] mt-1">
@@ -1332,7 +1294,7 @@ export function LandingPage({
                               {room.controlMode === 'host_only' ? 'Host Aux' : 'Open Aux'}
                             </span>
                           </div>
-                          <h3 className="font-display text-lg font-bold text-[#E6EDF7] truncate">
+                          <h3 className="font-display text-lg font-bold text-[#F4F1EA] truncate">
                             {room.roomName}
                           </h3>
                           <p className="mt-1 text-sm text-[#A7A3C7] truncate">
@@ -1368,10 +1330,10 @@ export function LandingPage({
           </div>
         </section>
 
-        {/* Section 6: FAQ */}
+        {/* Section 7: FAQ */}
         <section id="faq" className="relative py-20 lg:py-24">
           <div className="mx-auto max-w-[1280px] px-6">
-            <h2 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-[#E6EDF7] mb-8">
+            <h2 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-[#F4F1EA] mb-8">
               Got questions?
             </h2>
 
@@ -1386,11 +1348,11 @@ export function LandingPage({
                       aria-expanded={isOpen}
                       className="w-full flex items-center justify-between gap-4 py-5 text-left cursor-pointer group"
                     >
-                      <span className="text-base font-medium text-[#E6EDF7] group-hover:text-[#67E8F9] transition-colors">
+                      <span className="text-base font-medium text-[#F4F1EA] group-hover:text-[#67E8F9] transition-colors">
                         {item.q}
                       </span>
                       <ChevronDown
-                        className={`w-4 h-4 text-[#A7A3C7] shrink-0 transition-transform duration-150 ${
+                        className={`w-4 h-4 text-[#8A8780] shrink-0 transition-transform duration-150 ${
                           isOpen ? 'rotate-180 text-[#67E8F9]' : ''
                         }`}
                       />
@@ -1408,14 +1370,14 @@ export function LandingPage({
         </section>
       </main>
 
-      {/* Giant Extruded Wordmark Footer (Inspired by Reference Footer) */}
+      {/* Giant Extruded Wordmark Footer */}
       <footer className="relative z-10 mt-10 pt-16 pb-12 border-t border-white/10 bg-[#06050E]/90 backdrop-blur-md">
         <div className="mx-auto max-w-[1280px] px-6">
           <div className="flex justify-center -mt-22 mb-10">
             <button
               type="button"
               onClick={scrollToTop}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-full glass glow-cyan text-[#E6EDF7] font-mono text-xs font-bold uppercase tracking-wider transition-transform hover:scale-105 cursor-pointer"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full glass glow-cyan text-[#F4F1EA] font-mono text-xs font-bold uppercase tracking-wider transition-transform hover:scale-105 cursor-pointer"
             >
               <ArrowUp className="w-3.5 h-3.5 text-[#67E8F9]" />
               <span>Back to top</span>
@@ -1428,15 +1390,18 @@ export function LandingPage({
             </span>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 border-t border-white/10 text-xs text-[#A7A3C7]">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 border-t border-white/10 text-xs text-[#8A8780]">
             <div className="flex items-center gap-3">
-              <span className="font-display text-sm font-bold text-[#E6EDF7]">SyncBeats</span>
+              <span className="font-display text-sm font-bold text-[#F4F1EA]">SyncBeats</span>
               <span aria-hidden="true">·</span>
               <span>Clan Edition · Multi-device sound system</span>
             </div>
             <div className="flex items-center gap-6">
               <a href="#beats" className="hover:text-[#67E8F9] transition-colors">
                 Beat Crate
+              </a>
+              <a href="#patch" className="hover:text-[#67E8F9] transition-colors">
+                Signal Patch
               </a>
               <a href="#demo" className="hover:text-[#67E8F9] transition-colors">
                 Soundcheck
@@ -1460,7 +1425,7 @@ export function LandingPage({
         >
           <div className="w-full max-w-md rounded-2xl glass glow-violet p-6 sm:p-7">
             <div className="flex items-center justify-between mb-5">
-              <h2 id="create-room-title" className="font-display text-xl font-bold text-[#E6EDF7]">
+              <h2 id="create-room-title" className="font-display text-xl font-bold text-[#F4F1EA]">
                 Start a Listening Session
               </h2>
               <button
@@ -1475,7 +1440,7 @@ export function LandingPage({
 
             <form onSubmit={(e) => void handleCreateSubmit(e)} className="space-y-4">
               <div>
-                <label htmlFor="room-name" className="block text-xs font-medium text-[#E6EDF7] mb-1.5">
+                <label htmlFor="room-name" className="block text-xs font-medium text-[#F4F1EA] mb-1.5">
                   Session Name
                 </label>
                 <input
@@ -1485,12 +1450,12 @@ export function LandingPage({
                   onChange={(e) => setRoomName(e.target.value)}
                   maxLength={48}
                   placeholder="e.g. Late Night 808 Cypher"
-                  className="w-full px-3.5 py-2.5 text-sm glass-inset rounded-xl text-[#E6EDF7] placeholder:text-[#A7A3C7]/60 focus:border-[#67E8F9] focus:outline-none"
+                  className="w-full px-3.5 py-2.5 text-sm glass-inset rounded-xl text-[#F4F1EA] placeholder:text-[#8A8780] focus:border-[#67E8F9] focus:outline-none"
                 />
               </div>
 
               <div>
-                <span className="block text-xs font-medium text-[#E6EDF7] mb-1.5">Room Access</span>
+                <span className="block text-xs font-medium text-[#F4F1EA] mb-1.5">Room Access</span>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -1523,7 +1488,7 @@ export function LandingPage({
                 <div>
                   <label
                     htmlFor="room-capacity"
-                    className="block text-xs font-medium text-[#E6EDF7] mb-1.5"
+                    className="block text-xs font-medium text-[#F4F1EA] mb-1.5"
                   >
                     Max Speakers (2–50)
                   </label>
@@ -1536,14 +1501,14 @@ export function LandingPage({
                     onChange={(e) =>
                       setMaxCapacity(Math.max(2, Math.min(50, Number(e.target.value) || 16)))
                     }
-                    className="w-full px-3.5 py-2.5 text-sm font-mono glass-inset rounded-xl text-[#E6EDF7] focus:border-[#67E8F9] focus:outline-none"
+                    className="w-full px-3.5 py-2.5 text-sm font-mono glass-inset rounded-xl text-[#F4F1EA] focus:border-[#67E8F9] focus:outline-none"
                   />
                 </div>
 
                 <div>
                   <label
                     htmlFor="room-password"
-                    className="block text-xs font-medium text-[#E6EDF7] mb-1.5"
+                    className="block text-xs font-medium text-[#F4F1EA] mb-1.5"
                   >
                     Password (Optional)
                   </label>
@@ -1554,13 +1519,13 @@ export function LandingPage({
                     onChange={(e) => setRoomPassword(e.target.value)}
                     maxLength={64}
                     placeholder="Leave blank if open"
-                    className="w-full px-3.5 py-2.5 text-sm glass-inset rounded-xl text-[#E6EDF7] placeholder:text-[#A7A3C7]/60 focus:border-[#67E8F9] focus:outline-none"
+                    className="w-full px-3.5 py-2.5 text-sm glass-inset rounded-xl text-[#F4F1EA] placeholder:text-[#8A8780] focus:border-[#67E8F9] focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <span className="block text-xs font-medium text-[#E6EDF7] mb-1.5">Aux Controls</span>
+                <span className="block text-xs font-medium text-[#F4F1EA] mb-1.5">Aux Controls</span>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -1618,7 +1583,7 @@ export function LandingPage({
         >
           <div className="w-full max-w-sm rounded-2xl glass glow-cyan p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 id="password-room-title" className="font-display text-lg font-bold text-[#E6EDF7]">
+              <h2 id="password-room-title" className="font-display text-lg font-bold text-[#F4F1EA]">
                 Enter Room Password
               </h2>
               <button
@@ -1643,7 +1608,7 @@ export function LandingPage({
                 placeholder="Room password"
                 autoFocus
                 required
-                className="w-full px-3.5 py-2.5 text-sm glass-inset rounded-xl text-[#E6EDF7] placeholder:text-[#A7A3C7]/60 focus:border-[#67E8F9] focus:outline-none"
+                className="w-full px-3.5 py-2.5 text-sm glass-inset rounded-xl text-[#F4F1EA] placeholder:text-[#8A8780] focus:border-[#67E8F9] focus:outline-none"
               />
               {passwordError && (
                 <p role="alert" className="text-xs text-rose-400">
