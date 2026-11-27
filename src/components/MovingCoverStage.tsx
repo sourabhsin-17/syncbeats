@@ -38,7 +38,8 @@ export function MovingCoverStage({ track, isPlaying }: MovingCoverStageProps) {
   const hasMultipleRealFrames = uniqueSources.length > 1;
 
   const slideSpecs: SlideCardSpec[] = useMemo(() => {
-    const pick = (idx: number) => uniqueSources[idx % uniqueSources.length];
+    const pick = (idx: number) =>
+      uniqueSources.length > 0 ? uniqueSources[idx % uniqueSources.length] : undefined;
     return [
       {
         id: 'front-tl-br',
@@ -148,7 +149,7 @@ export function MovingCoverStage({ track, isPlaying }: MovingCoverStageProps) {
       </div>
 
       {/* Moving Slides Viewport */}
-      <div className="relative z-10 h-52 sm:h-60 w-full overflow-hidden">
+      <div className="relative z-10 h-52 sm:h-64 w-full overflow-hidden [container-type:size]">
         {/* Corner Registration Crop Marks */}
         <span className="absolute top-2.5 left-2.5 w-3 h-3 border-t border-l border-[#67E8F9]/50 pointer-events-none z-20" />
         <span className="absolute top-2.5 right-2.5 w-3 h-3 border-t border-r border-[#67E8F9]/50 pointer-events-none z-20" />
@@ -164,7 +165,7 @@ export function MovingCoverStage({ track, isPlaying }: MovingCoverStageProps) {
                 animationDelay: slide.delayStyle,
                 zIndex: 10 + index,
               }}
-              className={`absolute top-4 left-2 sm:left-4 ${slide.sizeClass} ${slide.animClass} ${pausedClass} rounded-lg overflow-hidden border border-white/20 bg-[#0C0A1A]/95 shadow-[0_18px_40px_-14px_rgba(0,0,0,0.95)]`}
+              className={`absolute top-0 left-0 ${slide.sizeClass} ${slide.animClass} ${pausedClass} rounded-lg overflow-hidden border border-white/20 bg-[#0C0A1A]/95 shadow-[0_18px_40px_-14px_rgba(0,0,0,0.95)]`}
             >
               <div className={`relative w-full ${slide.showCaption ? 'aspect-[16/10]' : 'h-full'} overflow-hidden bg-zinc-900`}>
                 {canRenderImg ? (

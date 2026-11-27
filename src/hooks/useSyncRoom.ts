@@ -62,6 +62,11 @@ export function useSyncRoom(roomId: string) {
   const unmountedRef = useRef(false);
   const stopReconnectRef = useRef(false);
   const pendingPasswordRef = useRef<string | undefined>(undefined);
+  const localDeviceNameRef = useRef(localDeviceName);
+
+  useEffect(() => {
+    localDeviceNameRef.current = localDeviceName;
+  }, [localDeviceName]);
 
   const sendMessage = useCallback((msg: ClientWsMessage) => {
     const ws = wsRef.current;
@@ -99,7 +104,7 @@ export function useSyncRoom(roomId: string) {
           type: 'room:join',
           roomId,
           deviceId,
-          deviceName: localDeviceName,
+          deviceName: localDeviceNameRef.current,
           platform: detectPlatformLabel(),
           password: pendingPasswordRef.current,
         } satisfies ClientWsMessage),
@@ -163,6 +168,7 @@ export function useSyncRoom(roomId: string) {
         setErrorCode(msg.code ?? null);
         if (msg.code === 'PASSWORD_REQUIRED') {
           setPasswordRequired(true);
+          stopReconnectRef.current = true;
         }
         if (msg.code === 'ROOM_NOT_FOUND' || msg.code === 'INVALID_ROOM' || msg.code === 'ROOM_FULL') {
           stopReconnectRef.current = true;
@@ -182,7 +188,7 @@ export function useSyncRoom(roomId: string) {
         }, 1500);
       }
     };
-  }, [deviceId, localDeviceName, roomId]);
+  }, [deviceId, roomId]);
 
   useEffect(() => {
     unmountedRef.current = false;
@@ -334,6 +340,12 @@ export function useSyncRoom(roomId: string) {
     [sendMessage],
   );
 
+  const reportTrackDuration = useCallback(
+    (trackId: string, durationSec: number) =>
+      sendMessage({ type: 'track:duration', trackId, durationSec }),
+    [sendMessage],
+  );
+
   const clearError = useCallback(() => {
     setError(null);
     setErrorCode(null);
@@ -362,6 +374,7 @@ export function useSyncRoom(roomId: string) {
     removeTrack,
     renameDevice,
     reportTelemetry,
+    reportTrackDuration,
     sendChat,
     transferHost,
     kickMember,

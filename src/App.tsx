@@ -30,7 +30,7 @@ export default function App() {
     setActiveRoomId(roomCode);
   };
 
-  const handleCreateRoom = async (options: CreateRoomOptions) => {
+  const handleCreateRoom = async (options: CreateRoomOptions): Promise<boolean> => {
     setIsCreating(true);
     setJoinError(null);
     try {
@@ -45,8 +45,10 @@ export default function App() {
       }
       const data = (await resp.json()) as { roomId: string };
       navigateToRoom(data.roomId);
+      return true;
     } catch (err) {
       setJoinError(err instanceof Error ? err.message : 'Unable to reach room server.');
+      return false;
     } finally {
       setIsCreating(false);
     }

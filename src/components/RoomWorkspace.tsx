@@ -120,6 +120,7 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
     removeTrack,
     renameDevice,
     reportTelemetry,
+    reportTrackDuration,
     sendChat,
     transferHost,
     kickMember,
@@ -241,22 +242,49 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
     };
   }, [currentTrack]);
 
-  // Core synchronization executor for HTMLAudioElement
+  const latestClockOffsetRef = useRef(clockOffsetMs);
+  const latestLocalDriftRef = useRef(localDriftMs);
+  const latestAudioReadyRef = useRef(audioReady);
+  const latestRoomStateRef = useRef(roomState);
+
+  useEffect(() => {
+    latestClockOffsetRef.current = clockOffsetMs;
+  }, [clockOffsetMs]);
+
+  useEffect(() => {
+    latestLocalDriftRef.current = localDriftMs;
+  }, [localDriftMs]);
+
+  useEffect(() => {
+    latestAudioReadyRef.current = audioReady;
+  }, [audioReady]);
+
+  useEffect(() => {
+    latestRoomStateRef.current = roomState;
+  }, [roomState]);
+
+  const syncIsPlaying = roomState?.isPlaying ?? false;
+  const syncTrackIndex = roomState?.currentTrackIndex ?? 0;
+  const syncAnchorTime = roomState?.anchorServerTime ?? 0;
+  const syncAnchorPos = roomState?.anchorPositionSec ?? 0;
+  const syncTrackId = currentTrack?.id ?? '';
+  const syncTrackDuration = currentTrack?.durationSec ?? 0;
+  const syncHostDeviceId = roomState?.hostDeviceId ?? '';
+  const syncQueueLength = roomState?.queue.length ?? 0;
+
+  // Core synchronization executor for HTMLAudioElement (only re-runs on playback anchor / track changes)
   const syncAudioToRoom = useCallback(async () => {
     const audio = audioRef.current;
-    if (!audio || !roomState || !currentTrack || !isHtmlAudioTrack || !audioSrc) return;
+    if (!audio || !syncTrackId || !isHtmlAudioTrack || !audioSrc) return;
 
     if (scheduleTimeoutRef.current !== null) {
       clearTimeout(scheduleTimeoutRef.current);
       scheduleTimeoutRef.current = null;
     }
 
-    if (!roomState.isPlaying) {
+    if (!syncIsPlaying) {
       audio.pause();
-      const targetPos = Math.max(
-        0,
-        Math.min(currentTrack.durationSec, roomState.anchorPositionSec),
-      );
+      const targetPos = Math.max(0, Math.min(syncTrackDuration, syncAnchorPos));
       if (Math.abs(audio.currentTime - targetPos) > 0.05 && audio.readyState >= 1) {
         audio.currentTime = targetPos;
       }
@@ -265,24 +293,27 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
       return;
     }
 
-    const serverNow = Date.now() + clockOffsetMs;
-    const delayUntilAnchorMs = roomState.anchorServerTime - serverNow;
+    const serverNow = Date.now() + latestClockOffsetRef.current;
+    const delayUntilAnchorMs = syncAnchorTime - serverNow;
 
     const startAtCalculatedPosition = async () => {
-      if (!audioRef.current || !roomState.isPlaying) return;
-      const nowServer = Date.now() + clockOffsetMs;
-      const elapsedSec = Math.max(0, (nowServer - roomState.anchorServerTime) / 1000);
+      const activeAudio = audioRef.current;
+      const latestRoom = latestRoomStateRef.current;
+      if (!activeAudio || !latestRoom?.isPlaying) return;
+
+      const nowServer = Date.now() + latestClockOffsetRef.current;
+      const elapsedSec = Math.max(0, (nowServer - syncAnchorTime) / 1000);
       const targetPos = Math.min(
-        Math.max(0, currentTrack.durationSec - 0.05),
-        roomState.anchorPositionSec + elapsedSec,
+        Math.max(0, syncTrackDuration - 0.05),
+        syncAnchorPos + elapsedSec,
       );
 
-      if (audioRef.current.readyState >= 1) {
-        audioRef.current.currentTime = targetPos;
+      if (activeAudio.readyState >= 1) {
+        activeAudio.currentTime = targetPos;
       }
 
       try {
-        await audioRef.current.play();
+        await activeAudio.play();
         setAudioReady(true);
         setAutoplayBlocked(false);
       } catch {
@@ -293,7 +324,7 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
 
     if (delayUntilAnchorMs > 18 && delayUntilAnchorMs < 3000) {
       if (audio.readyState >= 1) {
-        audio.currentTime = Math.max(0, roomState.anchorPositionSec);
+        audio.currentTime = Math.max(0, syncAnchorPos);
       }
       scheduleTimeoutRef.current = window.setTimeout(() => {
         void startAtCalculatedPosition();
@@ -301,7 +332,15 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
     } else {
       await startAtCalculatedPosition();
     }
-  }, [audioSrc, clockOffsetMs, currentTrack, isHtmlAudioTrack, roomState]);
+  }, [
+    audioSrc,
+    isHtmlAudioTrack,
+    syncAnchorPos,
+    syncAnchorTime,
+    syncIsPlaying,
+    syncTrackDuration,
+    syncTrackId,
+  ]);
 
   useEffect(() => {
     void syncAudioToRoom();
@@ -314,23 +353,23 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
 
   // Continuous 250ms drift check + progress timer + host auto-advance
   useEffect(() => {
-    if (!roomState || !currentTrack) return;
+    if (!syncTrackId) return;
 
     const interval = window.setInterval(() => {
       const audio = audioRef.current;
-      const serverNow = Date.now() + clockOffsetMs;
+      const serverNow = Date.now() + latestClockOffsetRef.current;
 
-      if (!roomState.isPlaying) {
-        setDisplayPosSec(roomState.anchorPositionSec);
+      if (!syncIsPlaying) {
+        setDisplayPosSec(syncAnchorPos);
         return;
       }
 
-      const elapsed = Math.max(0, (serverNow - roomState.anchorServerTime) / 1000);
-      const expectedPos = roomState.anchorPositionSec + elapsed;
-      const clampedExpected = Math.min(currentTrack.durationSec, expectedPos);
+      const elapsed = Math.max(0, (serverNow - syncAnchorTime) / 1000);
+      const expectedPos = syncAnchorPos + elapsed;
+      const clampedExpected = Math.min(syncTrackDuration, expectedPos);
       setDisplayPosSec(clampedExpected);
 
-      if (roomState.isPlaying && !autoplayBlocked) {
+      if (!autoplayBlocked && currentTrack) {
         const phase = expectedPos * (currentTrack.bpm / 60) * Math.PI;
         setMeterBars(
           Array.from({ length: 8 }, (_, idx) => {
@@ -340,11 +379,11 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
         );
       }
 
-      if (expectedPos >= currentTrack.durationSec - 0.15 && roomState.queue.length > 0) {
-        const advanceKey = `${roomState.currentTrackIndex}-${roomState.anchorServerTime}`;
-        if (roomState.hostDeviceId === deviceId && lastAdvanceRef.current !== advanceKey) {
+      if (expectedPos >= syncTrackDuration - 0.15 && syncQueueLength > 0) {
+        const advanceKey = `${syncTrackIndex}-${syncAnchorTime}`;
+        if (syncHostDeviceId === deviceId && lastAdvanceRef.current !== advanceKey) {
           lastAdvanceRef.current = advanceKey;
-          const nextIdx = (roomState.currentTrackIndex + 1) % roomState.queue.length;
+          const nextIdx = (syncTrackIndex + 1) % syncQueueLength;
           selectTrack(nextIdx, true);
         }
         return;
@@ -362,23 +401,32 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
     return () => clearInterval(interval);
   }, [
     autoplayBlocked,
-    clockOffsetMs,
     currentTrack,
     deviceId,
     isHtmlAudioTrack,
-    roomState,
     selectTrack,
+    syncAnchorPos,
+    syncAnchorTime,
+    syncHostDeviceId,
+    syncIsPlaying,
+    syncQueueLength,
+    syncTrackDuration,
+    syncTrackId,
+    syncTrackIndex,
   ]);
 
-  // Periodically report real device telemetry to room
+  // Periodically report real device telemetry to room on a calm 2.5s cadence
   useEffect(() => {
-    if (!connected || !roomState) return;
-    reportTelemetry(localDriftMs, isHtmlAudioTrack ? audioReady : true);
+    if (!connected || !syncTrackId) return;
+    reportTelemetry(latestLocalDriftRef.current, isHtmlAudioTrack ? latestAudioReadyRef.current : true);
     const id = window.setInterval(() => {
-      reportTelemetry(localDriftMs, isHtmlAudioTrack ? audioReady : true);
-    }, 2200);
+      reportTelemetry(
+        latestLocalDriftRef.current,
+        isHtmlAudioTrack ? latestAudioReadyRef.current : true,
+      );
+    }, 2500);
     return () => clearInterval(id);
-  }, [audioReady, connected, isHtmlAudioTrack, localDriftMs, reportTelemetry, roomState]);
+  }, [connected, isHtmlAudioTrack, reportTelemetry, syncTrackId]);
 
   const handleLeave = () => {
     leaveRoomExplicitly();
@@ -405,13 +453,17 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
     } else {
       const audio = audioRef.current;
       if (isHtmlAudioTrack && audio && audio.paused) {
+        const prevMuted = audio.muted;
         try {
+          audio.muted = true;
           await audio.play();
           audio.pause();
           setAudioReady(true);
           setAutoplayBlocked(false);
         } catch {
           // Handled on room:state
+        } finally {
+          audio.muted = prevMuted;
         }
       }
       play(displayPosSec);
@@ -480,6 +532,7 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
         method: 'POST',
         headers: {
           'Content-Type': file.type || 'audio/mpeg',
+          'X-Requested-With': 'XMLHttpRequest',
           'x-device-id': deviceId,
           'x-track-title': encodeURIComponent(cleanTitle),
           'x-track-artist': encodeURIComponent('Shared File'),
@@ -622,6 +675,19 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
         ref={audioRef}
         src={audioSrc || undefined}
         preload="auto"
+        onLoadedMetadata={() => {
+          const audio = audioRef.current;
+          if (
+            audio &&
+            currentTrack &&
+            currentTrack.sourceType !== 'builtin' &&
+            Number.isFinite(audio.duration) &&
+            audio.duration >= 5 &&
+            canControlPlayback
+          ) {
+            reportTrackDuration(currentTrack.id, Math.round(audio.duration));
+          }
+        }}
         onLoadedData={() => {
           setMediaLoadError(null);
           void syncAudioToRoom();
@@ -900,6 +966,17 @@ export function RoomWorkspace({ roomId, onLeaveRoom }: RoomWorkspaceProps) {
                         volume={volume}
                         muted={muted}
                         onSyncDrift={(d) => setLocalDriftMs(Math.round(d * 10) / 10)}
+                        onDurationDetected={(dur) => {
+                          if (canControlPlayback) {
+                            reportTrackDuration(currentTrack.id, dur);
+                          }
+                        }}
+                        onTrackEnded={() => {
+                          if (isHost && roomState && roomState.queue.length > 0) {
+                            const nextIdx = (roomState.currentTrackIndex + 1) % roomState.queue.length;
+                            selectTrack(nextIdx, true);
+                          }
+                        }}
                       />
                     </div>
                   )}

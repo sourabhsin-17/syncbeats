@@ -36,7 +36,7 @@ export interface CreateRoomOptions {
 }
 
 interface LandingPageProps {
-  onCreateRoom: (options: CreateRoomOptions) => Promise<void>;
+  onCreateRoom: (options: CreateRoomOptions) => Promise<boolean>;
   onJoinRoom: (roomCode: string) => void;
   isCreating: boolean;
   joinError: string | null;
@@ -217,8 +217,9 @@ export function LandingPage({
   const [roomName, setRoomName] = useState('');
   const [visibility, setVisibility] = useState<RoomVisibility>('public');
   const [roomPassword, setRoomPassword] = useState('');
-  const [maxCapacity, setMaxCapacity] = useState(16);
+  const [maxCapacityInput, setMaxCapacityInput] = useState('16');
   const [controlMode, setControlMode] = useState<ControlMode>('collaborative');
+  const [createModalError, setCreateModalError] = useState<string | null>(null);
 
   const [passwordPromptRoomId, setPasswordPromptRoomId] = useState<string | null>(null);
   const [passwordAttempt, setPasswordAttempt] = useState('');
@@ -243,6 +244,7 @@ export function LandingPage({
   const [loadingBeatKey, setLoadingBeatKey] = useState<BuiltinBeatKey | null>(null);
   const [selectedDossierKey, setSelectedDossierKey] = useState<BuiltinBeatKey | null>(null);
   const crateAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previewReqIdRef = useRef(0);
 
   // Interactive Multi-Device Cypher Sync Check
   const [demoRunning, setDemoRunning] = useState(false);
@@ -343,23 +345,35 @@ export function LandingPage({
     const audio = crateAudioRef.current;
     if (!audio) return;
 
+    const reqId = ++previewReqIdRef.current;
+
     if (playingBeatKey === key) {
       audio.pause();
       setPlayingBeatKey(null);
+      setLoadingBeatKey(null);
       return;
     }
 
     setLoadingBeatKey(key);
     try {
       const url = await getBuiltinTrackUrl(key);
+      if (previewReqIdRef.current !== reqId) return;
       audio.src = url;
       audio.currentTime = 0;
       await audio.play();
-      setPlayingBeatKey(key);
+      if (previewReqIdRef.current === reqId) {
+        setPlayingBeatKey(key);
+      } else {
+        audio.pause();
+      }
     } catch {
-      setPlayingBeatKey(null);
+      if (previewReqIdRef.current === reqId) {
+        setPlayingBeatKey(null);
+      }
     } finally {
-      setLoadingBeatKey(null);
+      if (previewReqIdRef.current === reqId) {
+        setLoadingBeatKey(null);
+      }
     }
   };
 
@@ -466,14 +480,21 @@ export function LandingPage({
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await onCreateRoom({
+    setCreateModalError(null);
+    const parsedCap = Math.max(2, Math.min(50, Math.round(Number(maxCapacityInput) || 16)));
+    setMaxCapacityInput(String(parsedCap));
+    const ok = await onCreateRoom({
       roomName: roomName.trim(),
       visibility,
       password: roomPassword,
-      maxCapacity,
+      maxCapacity: parsedCap,
       controlMode,
     });
-    setShowCreateModal(false);
+    if (ok) {
+      setShowCreateModal(false);
+    } else {
+      setCreateModalError('Could not create session. Check your connection or wait a moment.');
+    }
   };
 
   const scrollToTop = () => {
@@ -1497,10 +1518,15 @@ export function LandingPage({
                     type="number"
                     min={2}
                     max={50}
-                    value={maxCapacity}
-                    onChange={(e) =>
-                      setMaxCapacity(Math.max(2, Math.min(50, Number(e.target.value) || 16)))
-                    }
+                    value={maxCapacityInput}
+                    onChange={(e) => setMaxCapacityInput(e.target.value)}
+                    onBlur={() => {
+                      const clamped = Math.max(
+                        2,
+                        Math.min(50, Math.round(Number(maxCapacityInput) || 16)),
+                      );
+                      setMaxCapacityInput(String(clamped));
+                    }}
                     className="w-full px-3.5 py-2.5 text-sm font-mono glass-inset rounded-xl text-[#F4F1EA] focus:border-[#67E8F9] focus:outline-none"
                   />
                 </div>
@@ -1552,10 +1578,19 @@ export function LandingPage({
                 </div>
               </div>
 
+              {(createModalError || joinError) && (
+                <p role="alert" className="text-xs text-rose-400">
+                  {joinError || createModalError}
+                </p>
+              )}
+
               <div className="pt-2 flex items-center justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setCreateModalError(null);
+                    setShowCreateModal(false);
+                  }}
                   className="px-4 py-2.5 text-xs font-medium text-[#A7A3C7] hover:text-white cursor-pointer"
                 >
                   Cancel

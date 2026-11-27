@@ -211,6 +211,41 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
   return out;
 }
 
+function isHttpsRequest(req: express.Request): boolean {
+  const fwdProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  return req.secure || fwdProto === 'https';
+}
+
+function getRoomCookieOptions(req: express.Request): express.CookieOptions {
+  if (isHttpsRequest(req)) {
+    return {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      partitioned: true,
+      maxAge: 12 * 60 * 60 * 1000,
+    };
+  }
+  return {
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 12 * 60 * 60 * 1000,
+  };
+}
+
+function isSameOriginRequest(req: express.Request): boolean {
+  if (req.header('x-requested-with')) return true;
+  const origin = req.header('origin');
+  const expectedHost = String(req.header('x-forwarded-host') || req.header('host') || '').split(',')[0].trim().toLowerCase();
+  if (!origin) return true;
+  try {
+    const parsedOrigin = new URL(origin);
+    return Boolean(expectedHost) && parsedOrigin.host.toLowerCase() === expectedHost;
+  } catch {
+    return false;
+  }
+}
+
 function isRateLimited(bucket: number[], limit: number, windowMs: number, now = Date.now()): boolean {
   while (bucket.length > 0 && now - bucket[0] > windowMs) {
     bucket.shift();
@@ -327,6 +362,32 @@ function reorderUpcomingByVotes(room: RoomState) {
   room.queue = [...head, ...upcoming];
 }
 
+function isPrivateOrLoopbackHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (
+    h === 'localhost' ||
+    h.endsWith('.localhost') ||
+    h.endsWith('.local') ||
+    h === '::1' ||
+    h === '0.0.0.0' ||
+    h.startsWith('127.') ||
+    h.startsWith('10.') ||
+    h.startsWith('192.168.') ||
+    h.startsWith('169.254.') ||
+    h.startsWith('fe80:') ||
+    h.startsWith('fc00:') ||
+    h.startsWith('fd00:')
+  ) {
+    return true;
+  }
+  const m172 = /^172\.(\d+)\./.exec(h);
+  if (m172) {
+    const second = Number(m172[1]);
+    if (second >= 16 && second <= 31) return true;
+  }
+  return false;
+}
+
 function sanitizeExternalArtworkUrl(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;
   const trimmed = raw.trim();
@@ -337,10 +398,19 @@ function sanitizeExternalArtworkUrl(raw: unknown): string | undefined {
       parsed.protocol = 'https:';
     }
     if (parsed.protocol !== 'https:') return undefined;
+    if (isPrivateOrLoopbackHost(parsed.hostname)) return undefined;
     return parsed.toString();
   } catch {
     return undefined;
   }
+}
+
+function canonicalizeShareUrl(parsed: URL): string {
+  const clean = new URL(parsed.toString());
+  for (const param of ['si', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']) {
+    clean.searchParams.delete(param);
+  }
+  return clean.toString();
 }
 
 function decodeHtmlEntities(input: string): string {
@@ -383,6 +453,14 @@ async function fetchAppleMusicMeta(
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!resp.ok) return {};
+    try {
+      const finalHost = new URL(resp.url).hostname.toLowerCase();
+      if (isPrivateOrLoopbackHost(finalHost) || !finalHost.endsWith('apple.com')) {
+        return {};
+      }
+    } catch {
+      return {};
+    }
     const html = (await resp.text()).slice(0, 131_072);
 
     const extractMeta = (prop: string): string | undefined => {
@@ -437,6 +515,10 @@ async function parseProviderTrackFromUrl(
   }
 
   const host = parsed.hostname.toLowerCase();
+  if (isPrivateOrLoopbackHost(host)) {
+    return { error: 'Local or private network URLs are not allowed.' };
+  }
+
   const now = Date.now();
   const cleanCustomTitle = (customTitle || '').trim().slice(0, 80);
   const cleanCustomArtist = (customArtist || '').trim().slice(0, 80);
@@ -448,7 +530,11 @@ async function parseProviderTrackFromUrl(
   } else if (host.endsWith('youtube.com')) {
     if (parsed.pathname === '/watch') {
       youtubeId = parsed.searchParams.get('v');
-    } else if (parsed.pathname.startsWith('/shorts/') || parsed.pathname.startsWith('/embed/')) {
+    } else if (
+      parsed.pathname.startsWith('/shorts/') ||
+      parsed.pathname.startsWith('/embed/') ||
+      parsed.pathname.startsWith('/live/')
+    ) {
       youtubeId = parsed.pathname.split('/')[2] || null;
     }
   }
@@ -511,11 +597,12 @@ async function parseProviderTrackFromUrl(
     host === 'open.spotify.com' &&
     /\/(track|album|playlist|episode)\//i.test(parsed.pathname)
   ) {
+    const canonicalSpotifyUrl = canonicalizeShareUrl(parsed);
     const spotifyOembed = await fetchJsonWithTimeout<{
       title?: string;
       author_name?: string;
       thumbnail_url?: string;
-    }>(`https://open.spotify.com/oembed?url=${encodeURIComponent(parsed.toString())}`);
+    }>(`https://open.spotify.com/oembed?url=${encodeURIComponent(canonicalSpotifyUrl)}`);
 
     const spotifyArt = sanitizeExternalArtworkUrl(spotifyOembed?.thumbnail_url);
     const fallbackArt = '/src/assets/images/cover_boom_bap_1795418328317.jpg';
@@ -537,7 +624,7 @@ async function parseProviderTrackFromUrl(
         bpm: 120,
         sourceType: 'external',
         provider: 'spotify',
-        externalUrl: parsed.toString(),
+        externalUrl: canonicalSpotifyUrl,
         artworkUrl,
         slideUrls: [artworkUrl],
         addedBy,
@@ -550,7 +637,8 @@ async function parseProviderTrackFromUrl(
 
   // Apple Music URL detection
   if (host === 'music.apple.com') {
-    const appleMeta = await fetchAppleMusicMeta(parsed.toString());
+    const canonicalAppleUrl = canonicalizeShareUrl(parsed);
+    const appleMeta = await fetchAppleMusicMeta(canonicalAppleUrl);
     const fallbackArt = '/src/assets/images/cover_boom_bap_1795418328317.jpg';
     const artworkUrl = appleMeta.artworkUrl || fallbackArt;
 
@@ -570,7 +658,7 @@ async function parseProviderTrackFromUrl(
         bpm: 120,
         sourceType: 'external',
         provider: 'apple_music',
-        externalUrl: parsed.toString(),
+        externalUrl: canonicalAppleUrl,
         artworkUrl,
         slideUrls: [artworkUrl],
         addedBy,
@@ -739,7 +827,7 @@ app.use(express.json({ limit: '256kb' }));
 
 async function startServer() {
 
-  // Periodic cleanup of expired empty rooms & old uploaded media buffers
+  // Periodic cleanup of expired empty rooms, uploaded media buffers, and stale rate-limit windows
   setInterval(() => {
     const now = Date.now();
     for (const [roomId, record] of rooms.entries()) {
@@ -751,6 +839,14 @@ async function startServer() {
     for (const [mediaId, media] of uploadedMedia.entries()) {
       if (now - media.createdAt > MEDIA_TTL_MS) {
         uploadedMedia.delete(mediaId);
+      }
+    }
+    for (const [key, timestamps] of ipRateLimits.entries()) {
+      const fresh = timestamps.filter((ts) => now - ts < 120_000);
+      if (fresh.length === 0) {
+        ipRateLimits.delete(key);
+      } else {
+        ipRateLimits.set(key, fresh);
       }
     }
   }, 60_000).unref();
@@ -803,6 +899,11 @@ async function startServer() {
     const maxCapacity = Number(body.maxCapacity);
     const controlMode: ControlMode = body.controlMode === 'host_only' ? 'host_only' : 'collaborative';
 
+    if (rooms.size >= 500) {
+      res.status(503).json({ error: 'Server is at active room capacity. Try again shortly.' });
+      return;
+    }
+
     const record = createRoomRecord({
       roomName,
       visibility,
@@ -814,13 +915,7 @@ async function startServer() {
 
     if (record.state.hasPassword) {
       const cookieVal = signRoomCookie(record.state.roomId);
-      res.cookie(`sb_auth_${record.state.roomId}`, cookieVal, {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'none',
-        partitioned: true,
-        maxAge: 12 * 60 * 60 * 1000,
-      });
+      res.cookie(`sb_auth_${record.state.roomId}`, cookieVal, getRoomCookieOptions(req));
     }
 
     res.status(201).json({
@@ -855,7 +950,7 @@ async function startServer() {
       visibility: r.visibility,
       hasPassword: r.hasPassword,
       authorized,
-      memberCount: r.devices.length,
+      memberCount: r.devices.filter((d) => d.online).length,
       maxCapacity: r.maxCapacity,
       isPlaying: r.isPlaying,
       controlMode: r.controlMode,
@@ -890,13 +985,7 @@ async function startServer() {
     }
 
     const cookieVal = signRoomCookie(code);
-    res.cookie(`sb_auth_${code}`, cookieVal, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-      partitioned: true,
-      maxAge: 12 * 60 * 60 * 1000,
-    });
+    res.cookie(`sb_auth_${code}`, cookieVal, getRoomCookieOptions(req));
 
     res.json({ authorized: true, roomId: code });
   });
@@ -908,11 +997,24 @@ async function startServer() {
       limit: '25mb',
     }),
     (req, res) => {
+      if (!isSameOriginRequest(req)) {
+        res.status(403).json({ error: 'Cross-origin uploads are not allowed.' });
+        return;
+      }
+
       const code = normalizeRoomCode(req.params.roomId);
       const record = rooms.get(code);
       if (!record) {
         res.status(404).json({ error: 'Room not found.' });
         return;
+      }
+      if (record.state.hasPassword) {
+        const cookies = parseCookies(req.headers.cookie);
+        const authToken = cookies[`sb_auth_${code}`];
+        if (!authToken || !verifyRoomCookie(authToken, code)) {
+          res.status(401).json({ error: 'Room authentication required to upload tracks.' });
+          return;
+        }
       }
       if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
         res.status(400).json({ error: 'Empty audio payload.' });
@@ -926,9 +1028,9 @@ async function startServer() {
       }
 
       const uploaderDeviceId = String(req.header('x-device-id') || '').slice(0, 64);
-      const isMember = record.state.devices.some((d) => d.id === uploaderDeviceId);
+      const isMember = record.state.devices.some((d) => d.id === uploaderDeviceId && d.online);
       if (!isMember) {
-        res.status(403).json({ error: 'Only joined room members can upload tracks.' });
+        res.status(403).json({ error: 'Only active room members can upload tracks.' });
         return;
       }
 
@@ -1204,13 +1306,26 @@ async function startServer() {
       }
 
       if (msg.type === 'device:telemetry') {
-        member.rttMs = Math.max(0, Math.min(5000, Math.round(Number(msg.rttMs) || 0)));
-        member.offsetMs = Math.max(-60000, Math.min(60000, Math.round(Number(msg.offsetMs) || 0)));
-        member.driftMs = Math.round((Number(msg.driftMs) || 0) * 10) / 10;
-        member.audioReady = Boolean(msg.audioReady);
+        const nextRtt = Math.max(0, Math.min(5000, Math.round(Number(msg.rttMs) || 0)));
+        const nextOffset = Math.max(-60000, Math.min(60000, Math.round(Number(msg.offsetMs) || 0)));
+        const nextDrift = Math.round((Number(msg.driftMs) || 0) * 10) / 10;
+        const nextReady = Boolean(msg.audioReady);
+
+        const changed =
+          Math.abs(member.rttMs - nextRtt) >= 5 ||
+          Math.abs(member.offsetMs - nextOffset) >= 5 ||
+          Math.abs(member.driftMs - nextDrift) >= 0.5 ||
+          member.audioReady !== nextReady;
+
+        member.rttMs = nextRtt;
+        member.offsetMs = nextOffset;
+        member.driftMs = nextDrift;
+        member.audioReady = nextReady;
         member.lastSeenAt = Date.now();
-        room.updatedAt = Date.now();
-        broadcastRoomState(room);
+        if (changed) {
+          room.updatedAt = Date.now();
+          broadcastRoomState(room);
+        }
         return;
       }
 
@@ -1422,6 +1537,18 @@ async function startServer() {
           } else if (idx < room.currentTrackIndex) {
             room.currentTrackIndex -= 1;
           }
+          room.updatedAt = now;
+          broadcastRoomState(room);
+          break;
+        }
+        case 'track:duration': {
+          if (!canControlPlayback) return;
+          const targetTrack = room.queue.find((t) => t.id === msg.trackId);
+          if (!targetTrack || targetTrack.sourceType === 'builtin') return;
+          const dur = Math.round(Number(msg.durationSec) || 0);
+          if (!Number.isFinite(dur) || dur < 5 || dur > 14400) return;
+          if (Math.abs(targetTrack.durationSec - dur) < 2) return;
+          targetTrack.durationSec = dur;
           room.updatedAt = now;
           broadcastRoomState(room);
           break;

@@ -109,6 +109,7 @@ export type ClientWsMessage =
   | { type: 'queue:add_url'; url: string; title?: string; artist?: string }
   | { type: 'queue:vote'; trackId: string }
   | { type: 'queue:remove'; trackId: string }
+  | { type: 'track:duration'; trackId: string; durationSec: number }
   | { type: 'device:rename'; name: string }
   | {
       type: 'device:telemetry';
