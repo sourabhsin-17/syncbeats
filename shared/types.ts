@@ -125,6 +125,6 @@ export type ClientWsMessage =
 
 export type ServerWsMessage =
   | { type: 'sync:pong'; clientTime: number; serverTime: number }
-  | { type: 'room:state'; state: RoomState; yourDeviceId: string }
+  | { type: 'room:state'; state: RoomState; yourDeviceId: string; yourUploadToken?: string }
   | { type: 'room:error'; message: string; code?: string }
   | { type: 'room:kicked'; reason: string };

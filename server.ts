@@ -25,6 +25,9 @@ const EMPTY_ROOM_TTL_MS = 30 * 60_000;
 const MEDIA_TTL_MS = 2 * 60 * 60_000;
 const MAX_MEDIA_BYTES = 150 * 1024 * 1024;
 const MAX_CHAT_HISTORY = 120;
+const WS_MAX_PAYLOAD_BYTES = 16_384;
+const WS_HEARTBEAT_MS = 20_000;
+const WS_MAX_CONNECTIONS_PER_IP = 24;
 
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
@@ -49,6 +52,7 @@ interface ConnectedSocket {
   roomId: string | null;
   deviceId: string | null;
   ip: string;
+  isAlive: boolean;
   chatTimestamps: number[];
   actionTimestamps: number[];
 }
@@ -137,6 +141,7 @@ const uploadedMedia = new Map<string, UploadedMedia>();
 const roomSockets = new Map<string, Set<WebSocket>>();
 const socketMeta = new WeakMap<WebSocket, ConnectedSocket>();
 const ipRateLimits = new Map<string, number[]>();
+const wsIpConnections = new Map<string, number>();
 
 function safeDecode(raw: string): string {
   try {
@@ -194,6 +199,71 @@ function verifyRoomCookie(token: string, roomId: string): boolean {
     return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expectedSig, 'hex'));
   } catch {
     return false;
+  }
+}
+
+function signDeviceUploadToken(roomId: string, deviceId: string): string {
+  const payload = `upload:${roomId}:${deviceId}`;
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
+  return `${payload}.${sig}`;
+}
+
+function verifyDeviceUploadToken(token: string, roomId: string, deviceId: string): boolean {
+  if (!token || !roomId || !deviceId) return false;
+  const dotIdx = token.lastIndexOf('.');
+  if (dotIdx <= 0) return false;
+  const payload = token.slice(0, dotIdx);
+  const sig = token.slice(dotIdx + 1);
+  if (payload !== `upload:${roomId}:${deviceId}`) return false;
+  const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expectedSig, 'hex'));
+  } catch {
+    return false;
+  }
+}
+
+function isValidAudioBuffer(buf: Buffer): boolean {
+  if (buf.length < 12) return false;
+  // ID3v2 tag (MP3)
+  if (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) return true;
+  // MPEG audio / ADTS AAC frame sync
+  if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return true;
+  // RIFF WAVE (WAV)
+  if (
+    buf.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    buf.subarray(8, 12).toString('ascii') === 'WAVE'
+  ) {
+    return true;
+  }
+  // Ogg container (Ogg Vorbis / Opus)
+  if (buf.subarray(0, 4).toString('ascii') === 'OggS') return true;
+  // FLAC
+  if (buf.subarray(0, 4).toString('ascii') === 'fLaC') return true;
+  // ISO BMFF / MP4 / M4A (ftyp box)
+  if (buf.subarray(4, 8).toString('ascii') === 'ftyp') return true;
+  // WebM / Matroska EBML header
+  if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return true;
+  // AIFF / AIFC
+  if (
+    buf.subarray(0, 4).toString('ascii') === 'FORM' &&
+    (buf.subarray(8, 12).toString('ascii') === 'AIFF' ||
+      buf.subarray(8, 12).toString('ascii') === 'AIFC')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function cleanupUnusedRoomMedia(tracksToCheck: Track[], activeQueue: Track[]) {
+  for (const track of tracksToCheck) {
+    if (track.sourceType !== 'uploaded' || !track.mediaUrl?.startsWith('/api/media/')) continue;
+    const mediaId = track.mediaUrl.slice('/api/media/'.length);
+    if (!mediaId) continue;
+    const stillReferencedInRoom = activeQueue.some((t) => t.mediaUrl === track.mediaUrl);
+    if (!stillReferencedInRoom) {
+      uploadedMedia.delete(mediaId);
+    }
   }
 }
 
@@ -255,6 +325,15 @@ function isRateLimited(bucket: number[], limit: number, windowMs: number, now = 
   }
   bucket.push(now);
   return false;
+}
+
+function getClientIp(req: http.IncomingMessage & { ip?: string }): string {
+  if (typeof req.ip === 'string' && req.ip.trim()) return req.ip.trim();
+  const fwd = req.headers['x-forwarded-for'];
+  if (typeof fwd === 'string' && fwd.trim()) {
+    return fwd.split(',')[0].trim();
+  }
+  return req.socket?.remoteAddress || 'unknown';
 }
 
 function checkIpRateLimit(ip: string, key: string, limit: number, windowMs: number): boolean {
@@ -592,6 +671,10 @@ async function parseProviderTrackFromUrl(
     };
   }
 
+  if (host === 'youtu.be' || host.endsWith('youtube.com')) {
+    return { error: 'Paste a specific YouTube video, Shorts, Live, or youtu.be link.' };
+  }
+
   // Spotify URL detection (tracks, albums, playlists, episodes, including localized paths)
   if (
     host === 'open.spotify.com' &&
@@ -635,8 +718,22 @@ async function parseProviderTrackFromUrl(
     };
   }
 
+  if (
+    host === 'open.spotify.com' ||
+    host === 'spotify.com' ||
+    host === 'spotify.link' ||
+    host === 'spoti.fi'
+  ) {
+    return {
+      error: 'Paste a full Spotify track, album, playlist, or episode URL (open.spotify.com/track/...).',
+    };
+  }
+
   // Apple Music URL detection
   if (host === 'music.apple.com') {
+    if (parsed.pathname === '/' || parsed.pathname.trim().length < 3) {
+      return { error: 'Paste a specific Apple Music song or album URL.' };
+    }
     const canonicalAppleUrl = canonicalizeShareUrl(parsed);
     const appleMeta = await fetchAppleMusicMeta(canonicalAppleUrl);
     const fallbackArt = '/src/assets/images/cover_boom_bap_1795418328317.jpg';
@@ -722,10 +819,12 @@ function broadcastRoomState(room: RoomState) {
   if (!sockets) return;
   for (const client of sockets) {
     const meta = socketMeta.get(client);
+    const deviceId = meta?.deviceId ?? '';
     sendJson(client, {
       type: 'room:state',
       state: room,
-      yourDeviceId: meta?.deviceId ?? '',
+      yourDeviceId: deviceId,
+      yourUploadToken: deviceId ? signDeviceUploadToken(room.roomId, deviceId) : undefined,
     });
   }
 }
@@ -823,16 +922,23 @@ function handleSocketDisconnect(ws: WebSocket, explicitLeave: boolean) {
 
 export const app = express();
 app.set('trust proxy', 1);
+app.disable('x-powered-by');
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 app.use(express.json({ limit: '256kb' }));
 
 async function startServer() {
 
   // Periodic cleanup of expired empty rooms, uploaded media buffers, and stale rate-limit windows
-  setInterval(() => {
+  const cleanupTimer = setInterval(() => {
     const now = Date.now();
     for (const [roomId, record] of rooms.entries()) {
       if (record.state.devices.length === 0 && record.emptySince && now - record.emptySince > EMPTY_ROOM_TTL_MS) {
         for (const t of record.disconnectTimers.values()) clearTimeout(t);
+        cleanupUnusedRoomMedia(record.state.queue, []);
         rooms.delete(roomId);
       }
     }
@@ -849,7 +955,8 @@ async function startServer() {
         ipRateLimits.set(key, fresh);
       }
     }
-  }, 60_000).unref();
+  }, 60_000);
+  cleanupTimer.unref();
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, activeRooms: rooms.size });
@@ -1028,6 +1135,12 @@ async function startServer() {
       }
 
       const uploaderDeviceId = String(req.header('x-device-id') || '').slice(0, 64);
+      const uploaderToken = String(req.header('x-device-token') || '');
+      if (!verifyDeviceUploadToken(uploaderToken, code, uploaderDeviceId)) {
+        res.status(401).json({ error: 'Valid room member session token is required to upload tracks.' });
+        return;
+      }
+
       const isMember = record.state.devices.some((d) => d.id === uploaderDeviceId && d.online);
       if (!isMember) {
         res.status(403).json({ error: 'Only active room members can upload tracks.' });
@@ -1036,6 +1149,11 @@ async function startServer() {
 
       if (record.state.controlMode === 'host_only' && record.state.hostDeviceId !== uploaderDeviceId) {
         res.status(403).json({ error: 'Host-only playback mode is active for this room.' });
+        return;
+      }
+
+      if (!isValidAudioBuffer(req.body)) {
+        res.status(400).json({ error: 'Uploaded file does not appear to be a valid audio file.' });
         return;
       }
 
@@ -1126,23 +1244,89 @@ async function startServer() {
   });
 
   const server = http.createServer(app);
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  const wss = new WebSocketServer({
+    server,
+    path: '/ws',
+    maxPayload: WS_MAX_PAYLOAD_BYTES,
+  });
+
+  // Authoritative server-side playback advancement when a track finishes (handles throttled/offline host tabs)
+  const playbackTicker = setInterval(() => {
+    const now = Date.now();
+    for (const record of rooms.values()) {
+      const room = record.state;
+      if (!room.isPlaying || room.queue.length === 0) continue;
+      if (now < room.anchorServerTime) continue;
+
+      const currentTrack = room.queue[room.currentTrackIndex];
+      if (!currentTrack || currentTrack.durationSec <= 0) continue;
+
+      const elapsedSec = (now - room.anchorServerTime) / 1000;
+      const currentPosSec = room.anchorPositionSec + elapsedSec;
+      if (currentPosSec >= currentTrack.durationSec + 0.35) {
+        const nextIdx = (room.currentTrackIndex + 1) % room.queue.length;
+        room.currentTrackIndex = nextIdx;
+        if (room.queue[nextIdx]) {
+          room.queue[nextIdx].votes = [];
+        }
+        room.anchorPositionSec = 0;
+        room.anchorServerTime = now + SCHEDULE_LEAD_MS;
+        room.updatedAt = now;
+        broadcastRoomState(room);
+      }
+    }
+  }, 1000);
+  playbackTicker.unref();
+
+  // WebSocket protocol ping/pong liveness heartbeat to prune zombie connections
+  const wsHeartbeatTimer = setInterval(() => {
+    for (const client of wss.clients) {
+      const meta = socketMeta.get(client);
+      if (!meta) continue;
+      if (!meta.isAlive) {
+        client.terminate();
+        continue;
+      }
+      meta.isAlive = false;
+      if (client.readyState === WebSocket.OPEN) {
+        client.ping();
+      }
+    }
+  }, WS_HEARTBEAT_MS);
+  wsHeartbeatTimer.unref();
 
   wss.on('connection', (ws, req) => {
     const cookies = parseCookies(req.headers.cookie);
-    const clientIp = req.socket.remoteAddress || 'unknown';
+    const clientIp = getClientIp(req);
+    const activeForIp = wsIpConnections.get(clientIp) ?? 0;
+    if (activeForIp >= WS_MAX_CONNECTIONS_PER_IP) {
+      sendJson(ws, {
+        type: 'room:error',
+        message: 'Too many simultaneous speaker connections from this network.',
+      });
+      ws.close(1008, 'Connection limit reached');
+      return;
+    }
+    wsIpConnections.set(clientIp, activeForIp + 1);
+
     socketMeta.set(ws, {
       ws,
       roomId: null,
       deviceId: null,
       ip: clientIp,
+      isAlive: true,
       chatTimestamps: [],
       actionTimestamps: [],
     });
 
+    ws.on('pong', () => {
+      const meta = socketMeta.get(ws);
+      if (meta) meta.isAlive = true;
+    });
+
     ws.on('message', async (rawData) => {
       try {
-        if (Buffer.byteLength(rawData as Buffer) > 16_384) {
+        if (Buffer.byteLength(rawData as Buffer) > WS_MAX_PAYLOAD_BYTES) {
           sendJson(ws, { type: 'room:error', message: 'Payload too large.' });
           return;
         }
@@ -1372,10 +1556,13 @@ async function startServer() {
             sendJson(ws, { type: 'room:error', message: 'Add a track to the playlist first.' });
             return;
           }
-          const currentPos =
+          const currentTrack = room.queue[room.currentTrackIndex];
+          const maxDuration = currentTrack ? Math.max(0, currentTrack.durationSec - 0.1) : 1000;
+          const rawPos =
             typeof msg.positionSec === 'number' && Number.isFinite(msg.positionSec)
-              ? Math.max(0, msg.positionSec)
+              ? msg.positionSec
               : computeCurrentPositionSec(room, now);
+          const currentPos = Math.max(0, Math.min(maxDuration, rawPos));
           room.isPlaying = true;
           room.anchorPositionSec = currentPos;
           room.anchorServerTime = now + SCHEDULE_LEAD_MS;
@@ -1388,9 +1575,12 @@ async function startServer() {
             sendJson(ws, { type: 'room:error', message: 'Only the host can pause playback in this room.' });
             return;
           }
-          const pos = Number.isFinite(msg.positionSec)
-            ? Math.max(0, msg.positionSec)
+          const currentTrack = room.queue[room.currentTrackIndex];
+          const maxDuration = currentTrack ? currentTrack.durationSec : 1000;
+          const rawPos = Number.isFinite(msg.positionSec)
+            ? msg.positionSec
             : computeCurrentPositionSec(room, now);
+          const pos = Math.max(0, Math.min(maxDuration, rawPos));
           room.isPlaying = false;
           room.anchorPositionSec = pos;
           room.anchorServerTime = now;
@@ -1419,6 +1609,9 @@ async function startServer() {
           }
           if (msg.index < 0 || msg.index >= room.queue.length) return;
           room.currentTrackIndex = msg.index;
+          if (room.queue[msg.index]) {
+            room.queue[msg.index].votes = [];
+          }
           room.anchorPositionSec = 0;
           room.isPlaying = msg.autoPlay ?? true;
           room.anchorServerTime = room.isPlaying ? now + SCHEDULE_LEAD_MS : now;
@@ -1499,6 +1692,10 @@ async function startServer() {
         case 'queue:vote': {
           const idx = room.queue.findIndex((t) => t.id === msg.trackId);
           if (idx === -1) return;
+          if (idx === room.currentTrackIndex) {
+            sendJson(ws, { type: 'room:error', message: 'Cannot vote on the currently playing track.' });
+            return;
+          }
           const track = room.queue[idx];
           const existingVote = track.votes.indexOf(member.id);
           if (existingVote >= 0) {
@@ -1524,7 +1721,10 @@ async function startServer() {
             return;
           }
 
-          room.queue.splice(idx, 1);
+          const [removedTrack] = room.queue.splice(idx, 1);
+          if (removedTrack) {
+            cleanupUnusedRoomMedia([removedTrack], room.queue);
+          }
           if (room.queue.length === 0) {
             room.currentTrackIndex = 0;
             room.isPlaying = false;
@@ -1633,9 +1833,47 @@ async function startServer() {
     });
 
     ws.on('close', () => {
+      const meta = socketMeta.get(ws);
+      if (meta) {
+        const count = wsIpConnections.get(meta.ip) ?? 0;
+        if (count <= 1) {
+          wsIpConnections.delete(meta.ip);
+        } else {
+          wsIpConnections.set(meta.ip, count - 1);
+        }
+      }
       handleSocketDisconnect(ws, false);
     });
   });
+
+  // Structured JSON error handling for API routes (malformed JSON, oversized payloads, unexpected errors)
+  app.use(
+    (
+      err: Error & { status?: number; type?: string },
+      req: express.Request,
+      res: express.Response,
+      next: express.NextFunction,
+    ) => {
+      if (res.headersSent) {
+        next(err);
+        return;
+      }
+      if (err instanceof SyntaxError && 'body' in err) {
+        res.status(400).json({ error: 'Invalid JSON request body.' });
+        return;
+      }
+      if (err.type === 'entity.too.large' || err.status === 413) {
+        res.status(413).json({ error: 'Uploaded payload exceeds the maximum allowed size.' });
+        return;
+      }
+      if (req.path.startsWith('/api/')) {
+        console.error('API error:', err.message);
+        res.status(500).json({ error: 'Internal server error.' });
+        return;
+      }
+      next(err);
+    },
+  );
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
@@ -1658,6 +1896,30 @@ async function startServer() {
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`SyncBeats server listening on http://localhost:${PORT}`);
     });
+
+    const shutdown = (signal: string) => {
+      console.log(`Received ${signal}, shutting down SyncBeats server cleanly...`);
+      clearInterval(cleanupTimer);
+      clearInterval(playbackTicker);
+      clearInterval(wsHeartbeatTimer);
+      for (const record of rooms.values()) {
+        for (const t of record.disconnectTimers.values()) clearTimeout(t);
+        record.disconnectTimers.clear();
+      }
+      for (const client of wss.clients) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.close(1001, 'Server restarting');
+        }
+      }
+      wss.close();
+      server.close(() => {
+        process.exit(0);
+      });
+      setTimeout(() => process.exit(0), 5000).unref();
+    };
+
+    process.once('SIGINT', () => shutdown('SIGINT'));
+    process.once('SIGTERM', () => shutdown('SIGTERM'));
   }
 }
 

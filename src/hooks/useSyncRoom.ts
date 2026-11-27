@@ -54,6 +54,7 @@ export function useSyncRoom(roomId: string) {
   const [rttMs, setRttMs] = useState(14);
   const [deviceId] = useState<string>(() => getSessionDeviceId());
   const [localDeviceName, setLocalDeviceName] = useState<string>(() => getDefaultDeviceName());
+  const [uploadToken, setUploadToken] = useState<string>('');
 
   const wsRef = useRef<WebSocket | null>(null);
   const samplesRef = useRef<ClockSample[]>([]);
@@ -148,6 +149,9 @@ export function useSyncRoom(roomId: string) {
 
       if (msg.type === 'room:state') {
         setRoomState(msg.state);
+        if (typeof msg.yourUploadToken === 'string') {
+          setUploadToken(msg.yourUploadToken);
+        }
         setPasswordRequired(false);
         setError(null);
         setErrorCode(null);
@@ -159,6 +163,7 @@ export function useSyncRoom(roomId: string) {
         stopReconnectRef.current = true;
         setKickedReason(msg.reason);
         setRoomState(null);
+        setUploadToken('');
         ws.close();
         return;
       }
@@ -359,6 +364,7 @@ export function useSyncRoom(roomId: string) {
     passwordRequired,
     kickedReason,
     deviceId,
+    uploadToken,
     localDeviceName,
     clockOffsetMs,
     rttMs,
